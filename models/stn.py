@@ -92,7 +92,9 @@ class STNModule(nn.Module):
     def __init__(self, feat_in, feat_out=1, feat_size=44, stn_mode='translation_scale'):
         super(STNModule, self).__init__()
         # 旧输入 [Batch, 64, 56, 56] [Batch, 128, 28, 28] [Batch, 256, 14, 14]
-        # 新输入 [Batch, 512，243，243] [Batch, 512, 240, 240] [Batch, 512, 240, 240]
+        # 新输入 [Batch, 512，243，243] [Batch, 128, 122, 122] [Batch, 1, 61, 61]
+        # 新输入 [Batch, 512, 228, 228] [Batch, 128, 114, 114] [Batch, 1, 57, 57]
+        # 新输入 [Batch, 512, 173, 173] [Batch, 128, 87, 87] [Batch, 1, 44, 44]
         self.feat_in = feat_in
         self.feat_out = feat_out
         self.feat_size = feat_size 
@@ -102,17 +104,20 @@ class STNModule(nn.Module):
         self.fn = nn.Sequential( 
             # 512/4=128
             conv1x1(in_planes=self.feat_in, out_planes=128), # 尺寸不变 NewShape: (B, 128, 243, 243)
-                                                             #         NewShape: (B, 128, 173, 173) 
+                                                             #         NewShape: (B, 128, 228, 228)
+                                                             #         NewShape: (B, 128, 173, 173)
             nn.BatchNorm2d(128),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=3, stride=2, padding=1), # NewShape: (B, 128, 122, 122) 122 = (243-3+2)/2+1
+                                                              # NewShape: (B, 128, 114, 114) 114 = (228-3+2)/2+1
                                                               # NewShape: (B, 128, 87, 87) 87 = (173-3+2)/2+1
-            SPPF(128, 128), # shape 不变
+            SPPF(128, self.feat_out), # shape 不变
 
-            conv1x1(in_planes=128, out_planes=self.feat_out),
+            # conv1x1(in_planes=128, out_planes=self.feat_out),
             nn.BatchNorm2d(self.feat_out),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=3, stride=2, padding=1), #  (B, 1, 61, 61) 61=(122-3+2)/2+1 # 61*61=3721
+                                                              #  (B, 1, 57, 57) 57=(114-3+2)/2+1 # 57*57=3249 
                                                               #  (B, 1, 44, 44) 61=(87-3+2)/2+1 # 44*44=1936
         )
 
@@ -145,6 +150,7 @@ class STNModule(nn.Module):
     def forward(self, x):
         # 原始输入 x: torch.Size([32, 64, 56, 56])
         # 新输入 x: torch.Size([32, 512, 243, 243]) 
+        # 新输入 x: torch.Size([32, 512, 228, 228])
         # 新输入 x: torch.Size([32, 512, 173, 173])
         mode = self.stn_mode
         batch_size = x.size(0)
@@ -357,7 +363,8 @@ class PDN_M(nn.Module):
         # Conv-5 1×1 4×4 384 0 ReLU
         # Conv-6 1×1 1×1 384 0 -
         # 输入是[Batch, 3, 256, 256]
-        self.stn1 = STNModule(feat_in=512, feat_out=1, feat_size=44, stn_mode='rotation_scale') # 960=>61 680=>44
+        # 960=>61 900=>57 680=>44
+        self.stn1 = STNModule(feat_in=512, feat_out=1, feat_size=44, stn_mode='rotation_scale') 
         self.stn2 = STNModule(feat_in=512, feat_out=1, feat_size=44, stn_mode='rotation_scale')
         self.stn3 = STNModule(feat_in=512, feat_out=1, feat_size=44, stn_mode='rotation_scale')
         self.with_bn = with_bn
@@ -387,23 +394,28 @@ class PDN_M(nn.Module):
     def forward(self, x: Tensor) -> Tensor:
         # 输入是[Batch, 3, 256, 256]
         # 变为 [Batch, 3, 960, 960]
+        # 变为 [Batch, 3, 900, 900]
         # 变为 [Batch, 3, 680, 680]
         x = self.conv1(x) # shape: [Batch, 256, 256, 256] 256 = (256-4+2*3)/1+1 
                           # new shape: [Batch, 256, 963, 963] 963=(960-4+2*3)/1+1
+                          # new shape: [Batch, 256, 903, 903] 903=(900-4+2*3)/1+1
                           # new shape: [Batch, 256, 683, 683] 683=(680-4+2*3)/1+1
         x = self.bn1(x) if self.with_bn else x 
         x = F.relu(x) 
         x = self.avgpool1(x) # shape: [Batch, 256, 128, 128] 128 = (256-2+2*1)/2+1
                              # new shape: [Batch, 256, 482, 482] 482 = (963-2+2*1)/2+1 
+                             # new shape: [Batch, 256, 452, 452] 452 = (903-2+2*1)/2+1
                              # new shape: [Batch, 256, 342, 342] 342 = (683-2+2*1)/2+1
         x = self.conv2(x) # shape: [Batch, 512, 128, 128] 128 = (128-4+2*3)/1+1
                           # new shape: [Batch, 512, 485, 485] 485 = (482-4+2*3)/1+1
+                          # new shape: [Batch, 512, 455, 455] 455 = (452-4+2*3)/1+1
                           # new shape: [Batch, 345, 345, 345] 345 = (342-4+2*3)/1+1
         x = self.bn2(x) if self.with_bn else x 
         x = F.relu(x) 
         x = self.avgpool2(x) # shape: [Batch, 512, 64, 64] 64 = (128-2+2*1)/2+1
                              # new shape: [Batch, 512, 243, 243] 243 = (485-2+2*1)/2+1
-                             # new shape: [Batch, 512, 173, 173] 172 = (345-2+2*1)/2+1
+                             # new shape: [Batch, 512, 228, 228] 228 = (455-2+2*1)/2+1
+                             # new shape: [Batch, 512, 173, 173] 173 = (345-2+2*1)/2+1
         # stn1
         x, theta1 = self.stn1(x) # x是变换后的图像，theta1是变换矩阵
         tmp = np.tile(np.array([0, 0, 1]), (x.shape[0], 1, 1)).astype(np.float32)
@@ -412,6 +424,7 @@ class PDN_M(nn.Module):
         
         x = self.conv3(x) # shape: [Batch, 512, 64, 64] 64 = (64-1+2*0)/1+1
                           # new shape: [Batch, 512, 243, 243] 243 = (243-1+2*0)/1+1
+                          # new shape: [Batch, 512, 228, 228] 228 = (228-1+2*0)/1+1
                           # new shape: [Batch, 512, 173, 173] 173 = (173-1+2*0)/1+1
         x = self.bn3(x) if self.with_bn else x 
         x = F.relu(x)  
@@ -424,6 +437,7 @@ class PDN_M(nn.Module):
         
         x = self.conv4(x) # shape: [Batch, 512, 64, 64] 64 = (64-3+2*1)/1+1 
                           # new shape: [Batch, 512, 243, 243] 243 = (243-3+2*1)/1+1
+                          # new shape: [Batch, 512, 228, 228] 228 = (228-3+2*1)/1+1
                           # new shape: [Batch, 512, 173, 173] 173 = (173-3+2*1)/1+1
         x = self.bn4(x) if self.with_bn else x 
         x = F.relu(x)
@@ -436,12 +450,14 @@ class PDN_M(nn.Module):
         
         x = self.conv5(x) # shape: [Batch, 384, 61, 61] 61 = (64-4+2*0)/1+1
                           # new shape: [Batch, 384, 240, 240] 240 = (243-4+2*0)/1+1
+                          # new shape: [Batch, 384, 225, 225] 225 = (228-4+2*0)/1+1
                           # new shape: [Batch, 384, 170, 170] 170 = (173-4+2*0)/1+1
         x = self.bn5(x) if self.with_bn else x
         x = F.relu(x)
         
         x = self.conv6(x) # shape: [Batch, 384, 61, 61] 61 = (61-1+2*0)/1+1
                           # new shape: [Batch, 384, 240, 240] 240 = (240-1+2*0)/1+1
+                          # new shape: [Batch, 384, 225, 225] 225 = (225-1+2*0)/1+1
                           # new shape: [Batch, 384, 170, 170] 170 = (170-1+2*0)/1+1
         x = self.bn6(x) if self.with_bn else x 
         return x
