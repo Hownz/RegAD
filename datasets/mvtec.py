@@ -21,7 +21,7 @@ class FSAD_Dataset_train(Dataset):
                  dataset_path='./PCB',
                  class_name='PCB2',
                  is_train=True,
-                 resize=960,
+                 resize=680,
                  shot=2,
                  batch=32
                  ):
@@ -183,9 +183,9 @@ class FSAD_Dataset_train(Dataset):
 class FSAD_Dataset_test(Dataset):
     def __init__(self,
                  dataset_path='../data/mvtec_anomaly_detection',
-                 class_name='bottle',
+                 class_name='PCB1',
                  is_train=True,
-                 resize=256,
+                 resize=680,
                  shot=2
                  ):
         assert class_name in CLASS_NAMES, 'class_name: {}, should be in {}'.format(class_name, CLASS_NAMES)

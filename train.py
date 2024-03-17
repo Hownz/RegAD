@@ -30,7 +30,7 @@ def main():
     parser.add_argument('--data_path', type=str, default='./PCB')
     parser.add_argument('--epochs', type=int, default=50, help='maximum training epochs')
     parser.add_argument('--batch_size', type=int, default=4)
-    parser.add_argument('--img_size', type=int, default=960)
+    parser.add_argument('--img_size', type=int, default=680)
     parser.add_argument('--lr', type=float, default=0.0001, help='learning rate of others in SGD')
     parser.add_argument('--momentum', type=float, default=0.9, help='momentum of SGD')
     parser.add_argument('--seed', type=int, default=668, help='manual seed')
@@ -62,7 +62,7 @@ def main():
     print_log(state, log)
 
     # load model and dataset
-    STN = stn_net(args).to(device)
+    STN = stn_net().to(device)
     ENC = Encoder().to(device)
     PRED = Predictor().to(device)
 
