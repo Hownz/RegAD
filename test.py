@@ -106,12 +106,12 @@ def test(args, models, cur_epoch, fixed_fewshot_list, test_loader, **kwargs):
     ENC.eval()
     PRED.eval()
 
-    train_outputs = OrderedDict([('layer1', []), ('layer2', []), ('layer3', [])])
+    train_outputs = OrderedDict([('layer1', []), ('layer2', []), ('layer3', [])]) #创建字典
     test_outputs = OrderedDict([('layer1', []), ('layer2', []), ('layer3', [])])
 
     support_img = fixed_fewshot_list[cur_epoch]
     augment_support_img = support_img
-    # rotate img with small angle
+    # 数据增强
     for angle in [-np.pi/4, -3 * np.pi/16, -np.pi/8, -np.pi/16, np.pi/16, np.pi/8, 3 * np.pi/16, np.pi/4]:
         rotate_img = rot_img(support_img, angle)
         augment_support_img = torch.cat([augment_support_img, rotate_img], dim=0)
@@ -135,9 +135,9 @@ def test(args, models, cur_epoch, fixed_fewshot_list, test_loader, **kwargs):
     with torch.no_grad():
         support_feat = STN(augment_support_img.to(device))
     support_feat = torch.mean(support_feat, dim=0, keepdim=True)
-    train_outputs['layer1'].append(STN.stn1_output)
-    train_outputs['layer2'].append(STN.stn2_output)
-    train_outputs['layer3'].append(STN.stn3_output)
+    train_outputs['layer1'].append(STN.stn1_output) #layer1追加STN1输出 [32, 64, 56, 56]
+    train_outputs['layer2'].append(STN.stn2_output) #layer2追加STN2输出 [32, 128, 28, 28]
+    train_outputs['layer3'].append(STN.stn3_output) #layer3追加STN3输出 [32, 256, 14, 14]
 
     for k, v in train_outputs.items():
         train_outputs[k] = torch.cat(v, 0)
@@ -146,8 +146,8 @@ def test(args, models, cur_epoch, fixed_fewshot_list, test_loader, **kwargs):
     embedding_vectors = train_outputs['layer1']
     for layer_name in ['layer2', 'layer3']:
         embedding_vectors = embedding_concat(embedding_vectors, train_outputs[layer_name], True)
-
-    # calculate multivariate Gaussian distribution
+        #layer1与layer2和layer3的分别嵌入
+    # 高斯分布
     B, C, H, W = embedding_vectors.size()
     embedding_vectors = embedding_vectors.view(B, C, H * W)
     mean = torch.mean(embedding_vectors, dim=0)
@@ -158,10 +158,10 @@ def test(args, models, cur_epoch, fixed_fewshot_list, test_loader, **kwargs):
     train_outputs = [mean, cov]
 
     # torch version
-    query_imgs = []
-    gt_list = []
-    mask_list = []
-    score_map_list = []
+    query_imgs = [] #查询图像
+    gt_list = [] #真实标签
+    mask_list = [] #mask
+    score_map_list = [] #score
 
     for (query_img, _, mask, y) in tqdm(test_loader):
         query_imgs.extend(query_img.cpu().detach().numpy())
