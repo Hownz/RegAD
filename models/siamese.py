@@ -49,7 +49,7 @@ class Encoder(nn.Module):
         x = self.bn2(x)
         x = self.relu2(x)
 
-        out = self.conv3(x)
+        out = self.conv3(x) # shape: (B, 256, H, W)
         # out = self.relu3(x)
 
         return out
@@ -71,7 +71,7 @@ class Predictor(nn.Module):
         x = self.bn1(x)
         x = self.relu1(x)
 
-        out = self.conv2(x)
+        out = self.conv2(x) # shape: (B, 256, H, W)
         # out = self.relu2(x)
 
         return out
