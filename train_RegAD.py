@@ -29,7 +29,7 @@ def main():
     parser.add_argument('--data_path', type=str, default='./MVTec/')
     parser.add_argument('--epochs', type=int, default=50, help='maximum training epochs')
     parser.add_argument('--batch_size', type=int, default=32)
-    parser.add_argument('--img_size', type=int, default=960)
+    parser.add_argument('--img_size', type=int, default=224)
     parser.add_argument('--lr', type=float, default=0.0001, help='learning rate of others in SGD')
     parser.add_argument('--momentum', type=float, default=0.9, help='momentum of SGD')
     parser.add_argument('--seed', type=int, default=668, help='manual seed')
@@ -83,7 +83,13 @@ def main():
 
     # start training
     save_name = os.path.join(args.save_model_dir, '{}_{}_{}_model.pt'.format(args.obj, args.shot, args.stn_mode))
+    start_time = time.time()
     epoch_time = AverageMeter()
+    img_roc_auc_old = 0.0
+    per_pixel_rocauc_old = 0.0
+    print('Loading Fixed Support Set') # 加载固定的支持集
+    fixed_fewshot_list = torch.load(f'./support_set/{args.obj}/{args.shot}_{args.inferences}.pt') # 这是权重
+    print_log((f'---------{args.stn_mode}--------'), log)
 
     for epoch in range(1, args.epochs + 1):
         adjust_learning_rate(optimizers, init_lrs, epoch, args)
@@ -91,13 +97,51 @@ def main():
         need_time = '[Need: {:02d}:{:02d}:{:02d}]'.format(need_hour, need_mins, need_secs)
         print_log(' {:3d}/{:3d} ----- [{:s}] {:s}'.format(epoch, args.epochs, time_string(), need_time), log)
 
+        if epoch <= args.epochs: # 用于测试,每次干预的次数，也就是每次测试的次数
+            image_auc_list = []
+            pixel_auc_list = []
+            for inference_round in tqdm(range(args.inferences)): # 每次干预的次数，也就是每次测试的次数
+                scores_list, test_imgs, gt_list, gt_mask_list = test(models, inference_round, fixed_fewshot_list,
+                                                                     test_loader, **kwargs)
+                scores = np.asarray(scores_list)
+                # Normalization
+                max_anomaly_score = scores.max()
+                min_anomaly_score = scores.min()
+                scores = (scores - min_anomaly_score) / (max_anomaly_score - min_anomaly_score)
+
+                # calculate image-level ROC AUC score
+                img_scores = scores.reshape(scores.shape[0], -1).max(axis=1)
+                gt_list = np.asarray(gt_list)
+                img_roc_auc = roc_auc_score(gt_list, img_scores)
+                image_auc_list.append(img_roc_auc)
+
+                # calculate per-pixel level ROCAUC
+                gt_mask = np.asarray(gt_mask_list)
+                gt_mask = (gt_mask > 0.5).astype(np.int_)
+                per_pixel_rocauc = roc_auc_score(gt_mask.flatten(), scores.flatten())
+                pixel_auc_list.append(per_pixel_rocauc)
+
+            image_auc_list = np.array(image_auc_list)
+            pixel_auc_list = np.array(pixel_auc_list)
+            mean_img_auc = np.mean(image_auc_list, axis = 0)
+            mean_pixel_auc = np.mean(pixel_auc_list, axis = 0)
+
+            if mean_img_auc + mean_pixel_auc > per_pixel_rocauc_old + img_roc_auc_old:
+                state = {'STN': STN.state_dict(), 'ENC': ENC.state_dict(), 'PRED':PRED.state_dict()}
+                torch.save(state, save_name)
+                per_pixel_rocauc_old = mean_pixel_auc
+                img_roc_auc_old = mean_img_auc
+            print('Img-level AUC:',img_roc_auc_old)
+            print('Pixel-level AUC:', per_pixel_rocauc_old)
+
+            print_log(('Test Epoch(img, pixel): {} ({:.6f}, {:.6f}) best: ({:.3f}, {:.3f})'
+            .format(epoch-1, mean_img_auc, mean_pixel_auc, img_roc_auc_old, per_pixel_rocauc_old)), log)
+
+        epoch_time.update(time.time() - start_time)
+        start_time = time.time()
         train(models, epoch, train_loader, optimizers, log)
         train_dataset.shuffle_dataset()
         train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=1, shuffle=True, **kwargs)
-        
-        if epoch % 10 == 0:
-            state = {'STN': STN.state_dict(), 'ENC': ENC.state_dict(), 'PRED':PRED.state_dict()}
-            torch.save(state, save_name)
         
     log.close()
 

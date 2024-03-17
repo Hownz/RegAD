@@ -17,7 +17,7 @@ class FSAD_Dataset_train(Dataset):
                  dataset_path='../data/mvtec_anomaly_detection',
                  class_name='bottle',
                  is_train=True,
-                 resize=256,
+                 resize=960,
                  shot=2,
                  batch=32
                  ):
@@ -32,7 +32,7 @@ class FSAD_Dataset_train(Dataset):
         self.query_dir, self.support_dir = self.load_dataset_folder()
         # set transforms
         self.transform_x = transforms.Compose([
-            transforms.Resize(resize, Image.ANTIALIAS),
+            transforms.Resize((resize,resize), Image.ANTIALIAS),
             transforms.ToTensor(),
             # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         ])
@@ -55,17 +55,18 @@ class FSAD_Dataset_train(Dataset):
             for k in range(self.shot):
                 image = Image.open(support_list[i][k]).convert('RGB')
                 image = self.transform_x(image)
-                image = image.unsqueeze(dim=0) #image_shape torch.Size([1, 3, 224, 224])
+                image = image.unsqueeze(dim=0) # image_shape torch.Size([k, 3, 224, 224])
                 if support_sub_img is None:
                     support_sub_img = image
                 else:
-                    support_sub_img = torch.cat([support_sub_img, image], dim=0)
+                    support_sub_img = torch.cat([support_sub_img, image], dim=0) # support_sub_img_shape torch.Size([2, 3, 224, 224])
 
+            # 按照类别
             support_sub_img = support_sub_img.unsqueeze(dim=0)
             if support_img is None:
                 support_img = support_sub_img
             else:
-                support_img = torch.cat([support_img, support_sub_img], dim=0)
+                support_img = torch.cat([support_img, support_sub_img], dim=0) # 按照类别
 
             support_sub_img = None
 
@@ -81,34 +82,45 @@ class FSAD_Dataset_train(Dataset):
         data_img = {}
         # data_img includes all image pathes, key: class_name like wood, zipper. value: each image path.
         for class_name_one in CLASS_NAMES:
-            if class_name_one != self.class_name:
-                data_img[class_name_one] = []
-                img_dir = os.path.join(self.dataset_path, class_name_one, phase, 'good')
-                img_types = sorted(os.listdir(img_dir))
-                for img_type in img_types:
-                    img_type_dir = os.path.join(img_dir, img_type)
-                    data_img[class_name_one].append(img_type_dir)
-                random.shuffle(data_img[class_name_one])
+            # 差异化训练其它类，测试当前类
+            # if class_name_one != self.class_name: # 如果不是当前的类别，就将其加入到data_img中
+            #                                       # 这样训练基于配准的FSAD来学习类别不可知的特征配准，使模型能够在不调整正常图像的情况下检测新类别的异常。
+            #     data_img[class_name_one] = [] 
+            #     img_dir = os.path.join(self.dataset_path, class_name_one, phase, 'good')
+            #     img_types = sorted(os.listdir(img_dir)) # 获取当前类别的所有子类别：图片
+            #     for img_type in img_types:
+            #         img_type_dir = os.path.join(img_dir, img_type) 
+            #         data_img[class_name_one].append(img_type_dir) 
+            #     random.shuffle(data_img[class_name_one])
+            data_img[class_name_one] = [] 
+            img_dir = os.path.join(self.dataset_path, class_name_one, phase, 'good')
+            img_types = sorted(os.listdir(img_dir)) # 获取当前类别的所有子类别：图片
+            for img_type in img_types:
+                img_type_dir = os.path.join(img_dir, img_type) 
+                data_img[class_name_one].append(img_type_dir) 
+            random.shuffle(data_img[class_name_one])
 
         query_dir, support_dir = [], []
-        for class_name_one in data_img.keys():
-            for image_index in range(0, len(data_img[class_name_one]), self.batch):
+        for class_name_one in data_img.keys(): # key: class_name like wood, zipper, value: each image path.
+            for image_index in range(0, len(data_img[class_name_one]), self.batch): # 每次取batch个图片
                 query_sub_dir = []
                 support_sub_dir = []
-                for batch_count in range(0, self.batch):
-                    if image_index + batch_count >= len(data_img[class_name_one]):
-                        break
-                    image_dir_one = data_img[class_name_one][image_index + batch_count]
-                    support_dir_one = []
-                    query_sub_dir.append(image_dir_one)
-                    for k in range(self.shot):
-                        random_choose = random.randint(0, (len(data_img[class_name_one]) - 1))
-                        while data_img[class_name_one][random_choose] == image_dir_one:
-                            random_choose = random.randint(0, (len(data_img[class_name_one]) - 1))
-                        support_dir_one.append(data_img[class_name_one][random_choose])
-                    support_sub_dir.append(support_dir_one)
                 
-                query_dir.append(query_sub_dir)
+                for batch_count in range(0, self.batch): # 遍历batch个图片
+                    if image_index + batch_count >= len(data_img[class_name_one]): # 如果超出了类别的图片数量，就跳出循环
+                        break
+                    image_dir_one = data_img[class_name_one][image_index + batch_count] # 取出一个图片
+                    query_sub_dir.append(image_dir_one) # 一共追加batch个图片
+                    
+                    support_dir_one = [] # 用于存放支持集的图片
+                    for k in range(self.shot):
+                        random_choose = random.randint(0, (len(data_img[class_name_one]) - 1)) # 随机选择一个图片
+                        while data_img[class_name_one][random_choose] == image_dir_one: # 如果随机选择的图片和query图片一样，重新选择
+                            random_choose = random.randint(0, (len(data_img[class_name_one]) - 1)) # 重新选择一个图片
+                        support_dir_one.append(data_img[class_name_one][random_choose]) # 将随机选择的图片加入到support_dir_one中
+                    support_sub_dir.append(support_dir_one) # 每张图（Batch）追加两个，一共追加2*batch个图片（每个query图片对应2个support图片）
+                
+                query_dir.append(query_sub_dir) # 将每一批=>query_sub_dir加入到query_dir中（不管类别了）
                 support_dir.append(support_sub_dir)
 
         assert len(query_dir) == len(support_dir), 'number of query_dir and support_dir should be same'
@@ -120,14 +132,21 @@ class FSAD_Dataset_train(Dataset):
 
         data_img = {}
         for class_name_one in CLASS_NAMES:
-            if class_name_one != self.class_name:
-                data_img[class_name_one] = []
-                img_dir = os.path.join(self.dataset_path, class_name_one, phase, 'good')
-                img_types = sorted(os.listdir(img_dir))
-                for img_type in img_types:
-                    img_type_dir = os.path.join(img_dir, img_type)
-                    data_img[class_name_one].append(img_type_dir)
-                random.shuffle(data_img[class_name_one])
+            # if class_name_one != self.class_name:
+            #     data_img[class_name_one] = []
+            #     img_dir = os.path.join(self.dataset_path, class_name_one, phase, 'good')
+            #     img_types = sorted(os.listdir(img_dir))
+            #     for img_type in img_types:
+            #         img_type_dir = os.path.join(img_dir, img_type)
+            #         data_img[class_name_one].append(img_type_dir)
+            #     random.shuffle(data_img[class_name_one])
+            data_img[class_name_one] = []
+            img_dir = os.path.join(self.dataset_path, class_name_one, phase, 'good')
+            img_types = sorted(os.listdir(img_dir))
+            for img_type in img_types:
+                img_type_dir = os.path.join(img_dir, img_type)
+                data_img[class_name_one].append(img_type_dir)
+            random.shuffle(data_img[class_name_one])
 
         query_dir, support_dir = [], []
         for class_name_one in data_img.keys():
@@ -140,6 +159,7 @@ class FSAD_Dataset_train(Dataset):
                     if image_index + batch_count >= len(data_img[class_name_one]):
                         break
                     image_dir_one = data_img[class_name_one][image_index + batch_count]
+                   
                     support_dir_one = []
                     query_sub_dir.append(image_dir_one)
                     for k in range(self.shot):

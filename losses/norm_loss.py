@@ -19,7 +19,7 @@ def L2Loss(data1, data2):
 
 def CosLoss(data1, data2, Mean=True):
     data2 = data2.detach()
-    cos = nn.CosineSimilarity(dim=1)
+    cos = nn.CosineSimilarity(dim=1) # 方法是计算两个输入张量之间的余弦相似度
     if Mean:
         return -cos(data1, data2).mean()
     else:

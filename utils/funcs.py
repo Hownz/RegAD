@@ -6,20 +6,22 @@ import kornia as K
 
 
 def embedding_concat(x, y, use_cuda):
+    # from https://github.com/xiahaifeng1995/PaDiM-Anomaly-Detection-Localization-master
     device = torch.device('cuda' if use_cuda else 'cpu')
     B, C1, H1, W1 = x.size()
     _, C2, H2, W2 = y.size()
-    s = int(H1 / H2)
-    x = F.unfold(x, kernel_size=s, dilation=1, stride=s)
+    s = int(H1 / H2) # 这里计算了一个步长 s，用于将 x 沿着高度方向划分成与 y 相同高度的块。
+    x = F.unfold(x, kernel_size=s, dilation=1, stride=s) #  F.unfold 函数将张量 x 沿着高度方向进行展开，划分成大小为 s 的块。
     x = x.view(B, C1, -1, H2, W2)
     z = torch.zeros(B, C1 + C2, x.size(2), H2, W2).to(device)
     for i in range(x.size(2)):
         z[:, :, i, :, :] = torch.cat((x[:, :, i, :, :], y), 1)
     z = z.view(B, -1, H2 * W2)
-    z = F.fold(z, kernel_size=s, output_size=(H1, W1), stride=s)
+    z = F.fold(z, kernel_size=s, output_size=(H1, W1), stride=s) # fold 是 拼接后的张量 z 进行折叠操作，使其恢复到与 x 相同的形状。
     return z
 
 def mahalanobis_torch(u, v, cov):
+    # 这个函数是计算两个向量 u 和 v 之间的马氏距离。
     delta = u - v
     m = torch.dot(delta, torch.matmul(cov, delta))
     return torch.sqrt(m)
