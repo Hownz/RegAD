@@ -54,23 +54,23 @@ class STNModule(nn.Module):
         self.stn_n_params = N_PARAMS[self.stn_mode]
 
         self.conv = nn.Sequential(
-            conv3x3(in_planes=in_num, out_planes=64),
-            nn.BatchNorm2d(64),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
-            conv3x3(in_planes=64, out_planes=16),
-            nn.BatchNorm2d(16),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
+            conv3x3(in_planes=in_num, out_planes=64), #输入通道in_num 输出64
+            nn.BatchNorm2d(64), #标准化处理 输入通道64 输出64
+            nn.ReLU(), #激活函数
+            nn.MaxPool2d(kernel_size=3, stride=2, padding=1),#池化
+            conv3x3(in_planes=64, out_planes=16),#输入通道64 输出16
+            nn.BatchNorm2d(16),# 标准化处理 输入通道16 输出16
+            nn.ReLU(), #激活函数
+            nn.MaxPool2d(kernel_size=3, stride=2, padding=1),#池化
         )
 
         self.fc = nn.Sequential(
-            nn.Linear(in_features=16 * self.feat_size * self.feat_size, out_features=1024),
-            nn.ReLU(True),
-            nn.Linear(in_features=1024, out_features=self.stn_n_params),
+            nn.Linear(in_features=16 * self.feat_size * self.feat_size, out_features=1024), #全连接层 输入16*56*56 输出1024
+            nn.ReLU(True), # 激活函数
+            nn.Linear(in_features=1024, out_features=self.stn_n_params), #全连接层 输入1024 输出self.stn_n_params
         )
-        self.fc[2].weight.data.fill_(0)
-        self.fc[2].weight.data.zero_()
+        self.fc[2].weight.data.fill_(0) #初始化全连接层权重
+        self.fc[2].weight.data.zero_() #初始化全连接层偏置
 
         if self.stn_mode == 'affine':
             self.fc[2].bias.data.copy_(torch.tensor([1, 0, 0, 0, 1, 0], dtype=torch.float))
@@ -89,7 +89,7 @@ class STNModule(nn.Module):
         elif self.stn_mode == 'rotation_translation_scale':
             self.fc[2].bias.data.copy_(torch.tensor([0, 0, 0, 1, 1], dtype=torch.float))
 
-    def forward(self, x):
+    def forward(self, x):  #进行空间变换
         mode = self.stn_mode
         batch_size = x.size(0)
         conv_x = self.conv(x)
@@ -146,7 +146,7 @@ class STNModule(nn.Module):
                 theta1[:, 0, 2] = theta[:, 1]
                 theta1[:, 1, 2] = theta[:, 2]
 
-        grid = F.affine_grid(theta1, torch.Size(x.shape))
+        grid = F.affine_grid(theta1, torch.Size(x.shape)) #进行仿射变换
         img_transform = F.grid_sample(x, grid, padding_mode="reflection")
 
         return img_transform, theta1
@@ -205,14 +205,14 @@ class ResNet(nn.Module):
 
     def __init__(self, args, block, layers):
         super(ResNet, self).__init__()
-        self.inplanes = 64
+        self.inplanes = 64 #输入通道数
         self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3,
-                               bias=False)
-        self.bn1 = nn.BatchNorm2d(64)
-        self.relu = nn.ReLU(inplace=True)
-        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-        self.layer1 = self._make_layer(block, 64, layers[0], stride=1)
-        self.stn1 = STNModule(64, 1, args)
+                               bias=False) #卷积层-图像特征提取
+        self.bn1 = nn.BatchNorm2d(64) #归一化层
+        self.relu = nn.ReLU(inplace=True) #激活层
+        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1) #池化层
+        self.layer1 = self._make_layer(block, 64, layers[0], stride=1) #残差网络
+        self.stn1 = STNModule(64, 1, args) #STN层-空间变换
 
         self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
         self.stn2 = STNModule(128, 2, args)
@@ -224,8 +224,8 @@ class ResNet(nn.Module):
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
-                conv1x1(self.inplanes, planes * block.expansion, stride),
-                nn.BatchNorm2d(planes * block.expansion),
+                conv1x1(self.inplanes, planes * block.expansion, stride), #下采样层
+                nn.BatchNorm2d(planes * block.expansion), #归一化层
             )
 
         layers = []
@@ -236,7 +236,7 @@ class ResNet(nn.Module):
 
         return nn.Sequential(*layers)
 
-    def _fixstn(self, x, theta):
+    def _fixstn(self, x, theta): #进行仿射变换
         grid = F.affine_grid(theta, torch.Size(x.shape))
         img_transform = F.grid_sample(x, grid, padding_mode="reflection")
 
@@ -275,11 +275,12 @@ class ResNet(nn.Module):
 
 
 def stn_net(args, pretrained=True, **kwargs):
-    """Constructs a ResNet-18 model.
-    Args:
-        pretrained (bool): If True, returns a model pre-trained on ImageNet
-    """
     model = ResNet(args, BasicBlock, [2, 2, 2, 2], **kwargs)
     if pretrained:
         model.load_state_dict(model_zoo.load_url(model_urls['resnet18']), strict=False)
     return model
+
+######################
+# resnet18------wide_resnet50
+
+##########

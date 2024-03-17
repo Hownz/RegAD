@@ -24,21 +24,21 @@ device = torch.device('cuda' if use_cuda else 'cpu')
 
 def main():
     parser = argparse.ArgumentParser(description='Registration based Few-Shot Anomaly Detection')
-    parser.add_argument('--obj', type=str, default='bottle')
-    parser.add_argument('--data_type', type=str, default='mvtec')
-    parser.add_argument('--data_path', type=str, default='./MVTec/')
-    parser.add_argument('--epochs', type=int, default=50, help='maximum training epochs')
-    parser.add_argument('--batch_size', type=int, default=32)
-    parser.add_argument('--img_size', type=int, default=224)
-    parser.add_argument('--lr', type=float, default=0.0001, help='learning rate of others in SGD')
-    parser.add_argument('--momentum', type=float, default=0.9, help='momentum of SGD')
-    parser.add_argument('--seed', type=int, default=668, help='manual seed')
-    parser.add_argument('--shot', type=int, default=2, help='shot count')
-    parser.add_argument('--inferences', type=int, default=10, help='number of rounds per inference')
-    parser.add_argument('--stn_mode', type=str, default='rotation_scale',
+    parser.add_argument('--obj', type=str, default='bottle') #类别
+    parser.add_argument('--data_type', type=str, default='mvtec') #数据集
+    parser.add_argument('--data_path', type=str, default='./MVTec/')  #数据集路径
+    parser.add_argument('--epochs', type=int, default=50, help='maximum training epochs') #最大训练轮数
+    parser.add_argument('--batch_size', type=int, default=32) #batch_size
+    parser.add_argument('--img_size', type=int, default=224) #图像大小
+    parser.add_argument('--lr', type=float, default=0.0001, help='learning rate of others in SGD') #学习率
+    parser.add_argument('--momentum', type=float, default=0.9, help='momentum of SGD') #动量
+    parser.add_argument('--seed', type=int, default=668, help='manual seed') #随机种子
+    parser.add_argument('--shot', type=int, default=2, help='shot count') #样本数(k-shot)
+    parser.add_argument('--inferences', type=int, default=10, help='number of rounds per inference') #每轮推断次数
+    parser.add_argument('--stn_mode', type=str, default='rotation_scale', #变换模式-尺度变换
                         help='[affine, translation, rotation, scale, shear, rotation_scale, translation_scale, rotation_translation, rotation_translation_scale]')
     args = parser.parse_args()
-    args.input_channel = 3
+    args.input_channel = 3 #输入通道数
 
     if args.seed is None:
         args.seed = random.randint(1, 10000)
@@ -47,7 +47,7 @@ def main():
     if use_cuda:
         torch.cuda.manual_seed_all(args.seed)
 
-    args.prefix = time_file_str()
+    args.prefix = time_file_str() #日志文件
     args.save_dir = './logs_mvtec/'
     if not os.path.exists(args.save_dir):
         os.makedirs(args.save_dir)
@@ -56,22 +56,21 @@ def main():
     if not os.path.exists(args.save_model_dir):
         os.makedirs(args.save_model_dir)
 
-    log = open(os.path.join(args.save_dir, 'log_{}_{}.txt'.format(str(args.shot),args.obj)), 'w')
+    log = open(os.path.join(args.save_dir, 'log_{}_{}.txt'.format(str(args.shot),args.obj)), 'w')  #write to log file
     state = {k: v for k, v in args._get_kwargs()}
     print_log(state, log)
-
-    # load model and dataset
-    STN = stn_net(args).to(device)
-    ENC = Encoder().to(device)
+    # (224 224 3)
+    STN = stn_net(args).to(device) #(224 224 3)
+    ENC = Encoder().to(device) 
     PRED = Predictor().to(device)
 
     print(STN)
 
-    STN_optimizer = optim.SGD(STN.parameters(), lr=args.lr, momentum=args.momentum)
+    STN_optimizer = optim.SGD(STN.parameters(), lr=args.lr, momentum=args.momentum) #经过迭代器
     ENC_optimizer = optim.SGD(ENC.parameters(), lr=args.lr, momentum=args.momentum)
     PRED_optimizer = optim.SGD(PRED.parameters(), lr=args.lr, momentum=args.momentum)
-    models = [STN, ENC, PRED]
-    optimizers = [STN_optimizer, ENC_optimizer, PRED_optimizer]
+    models = [STN, ENC, PRED] #用于传递到下方的model
+    optimizers = [STN_optimizer, ENC_optimizer, PRED_optimizer] #用于传递到下方的optimizer
     init_lrs = [args.lr, args.lr, args.lr]
 
     print('Loading Datasets')
@@ -121,9 +120,9 @@ def main():
                 per_pixel_rocauc = roc_auc_score(gt_mask.flatten(), scores.flatten())
                 pixel_auc_list.append(per_pixel_rocauc)
 
-            image_auc_list = np.array(image_auc_list)
+            image_auc_list = np.array(image_auc_list) #将输入的数据转换为numpy数组。
             pixel_auc_list = np.array(pixel_auc_list)
-            mean_img_auc = np.mean(image_auc_list, axis = 0)
+            mean_img_auc = np.mean(image_auc_list, axis = 0) #计算均值auc
             mean_pixel_auc = np.mean(pixel_auc_list, axis = 0)
 
             if mean_img_auc + mean_pixel_auc > per_pixel_rocauc_old + img_roc_auc_old:
@@ -146,24 +145,23 @@ def main():
     log.close()
 
 def train(models, epoch, train_loader, optimizers, log):
-    STN = models[0]
-    ENC = models[1]
-    PRED = models[2]
-
+    STN = models[0] #STN层model
+    ENC = models[1] #ENC层model
+    PRED = models[2] #PRED层model
     STN_optimizer = optimizers[0]
     ENC_optimizer = optimizers[1]
     PRED_optimizer = optimizers[2]
 
-    STN.train()
+    STN.train() #空间变换网络 --不改变shape
     ENC.train()
     PRED.train()
-
+    
     total_losses = AverageMeter()
 
     for (query_img, support_img_list, _) in tqdm(train_loader):
-        STN_optimizer.zero_grad()
-        ENC_optimizer.zero_grad()
-        PRED_optimizer.zero_grad()
+        STN_optimizer.zero_grad() #清零梯度，
+        ENC_optimizer.zero_grad() #清零梯度，
+        PRED_optimizer.zero_grad() #清零梯度，
 
         query_img = query_img.squeeze(0).to(device)
         query_feat = STN(query_img)
@@ -187,9 +185,9 @@ def train(models, epoch, train_loader, optimizers, log):
 
         total_loss.backward()
 
-        STN_optimizer.step()
-        ENC_optimizer.step()
-        PRED_optimizer.step()
+        STN_optimizer.step() #更新模型参数
+        ENC_optimizer.step() #更新模型参数
+        PRED_optimizer.step() #更新模型参数
 
     print_log(('Train Epoch: {} Total_Loss: {:.6f}'.format(epoch, total_losses.avg)), log)
 
@@ -232,7 +230,7 @@ def test(models, cur_epoch, fixed_fewshot_list, test_loader, **kwargs):
 
     # torch version
     with torch.no_grad():
-        support_feat = STN(augment_support_img.to(device))
+        support_feat = STN(augment_support_img.to(device)) #[1,256,14,14]
     support_feat = torch.mean(support_feat, dim=0, keepdim=True)
     train_outputs['layer1'].append(STN.stn1_output)
     train_outputs['layer2'].append(STN.stn2_output)

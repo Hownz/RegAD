@@ -37,7 +37,7 @@ class Encoder(nn.Module):
 
         self.conv3 = conv1x1(in_planes=256, out_planes=256)
         self.bn3 = nn.BatchNorm2d(256)
-        self.relu3 = nn.ReLU()
+        self.relu3 = nn.ReLU() #(256, 256, 1, 1)
     
     def forward(self, x):
 
@@ -52,29 +52,28 @@ class Encoder(nn.Module):
         out = self.conv3(x)
         # out = self.relu3(x)
 
-        return out
+        return out #(256, 256, 1, 1)
 
 
 
 class Predictor(nn.Module):
     def __init__(self):
         super(Predictor, self).__init__()
-        self.conv1 = conv1x1(in_planes=256, out_planes=256)
-        self.bn1 = nn.BatchNorm2d(256)
-        self.relu1 = nn.ReLU()
+        self.conv1 = conv1x1(in_planes=256, out_planes=256)  #特征提取 1*1
+        self.bn1 = nn.BatchNorm2d(256)    #归一化
+        self.relu1 = nn.ReLU()#(256, 256, 1, 1)  #激活
 
-        self.conv2 = conv1x1(in_planes=256, out_planes=256)
-        self.relu2 = nn.ReLU()
+        self.conv2 = conv1x1(in_planes=256, out_planes=256) #特征提取  1*1
+        self.relu2 = nn.ReLU()#(256, 256, 1, 1)  #激活
 
     def forward(self, x):
-        x = self.conv1(x)
+        x = self.conv1(x)     # 1*1
         x = self.bn1(x)
         x = self.relu1(x)
 
         out = self.conv2(x)
         # out = self.relu2(x)
 
-        return out
-
+        return out #(256, 256, 1, 1)
 
 
