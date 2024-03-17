@@ -1,0 +1,2 @@
+{'batch_size': 4, 'data_path': './PCB', 'epochs': 50, 'img_size': 960, 'inferences': 10, 'input_channel': 3, 'lr': 0.0001, 'momentum': 0.9, 'obj': 'PCB2', 'prefix': '2024-03-17-6915', 'save_dir': './logs_pcb/', 'save_model_dir': './logs_pcb/rotation_scale/2/PCB2/', 'seed': 668, 'shot': 2, 'stn_mode': 'rotation_scale'}
+   1/ 50 ----- [[2024-03-17 23:48:14]] [Need: 00:00:00]

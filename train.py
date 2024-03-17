@@ -23,12 +23,13 @@ use_cuda = torch.cuda.is_available()
 device = torch.device('cuda' if use_cuda else 'cpu')
 
 def main():
+    
+
     parser = argparse.ArgumentParser(description='Registration based Few-Shot Anomaly Detection')
-    parser.add_argument('--obj', type=str, default='bottle')
-    parser.add_argument('--data_type', type=str, default='mvtec')
-    parser.add_argument('--data_path', type=str, default='./MVTec/')
+    parser.add_argument('--obj', type=str, default='PCB2')
+    parser.add_argument('--data_path', type=str, default='./PCB')
     parser.add_argument('--epochs', type=int, default=50, help='maximum training epochs')
-    parser.add_argument('--batch_size', type=int, default=32)
+    parser.add_argument('--batch_size', type=int, default=4)
     parser.add_argument('--img_size', type=int, default=960)
     parser.add_argument('--lr', type=float, default=0.0001, help='learning rate of others in SGD')
     parser.add_argument('--momentum', type=float, default=0.9, help='momentum of SGD')
@@ -48,11 +49,11 @@ def main():
         torch.cuda.manual_seed_all(args.seed)
 
     args.prefix = time_file_str()
-    args.save_dir = './logs_mvtec/'
+    args.save_dir = './logs_pcb/'
     if not os.path.exists(args.save_dir):
         os.makedirs(args.save_dir)
 
-    args.save_model_dir = './logs_mvtec/' + args.stn_mode + '/' + str(args.shot) + '/' + args.obj + '/'
+    args.save_model_dir = './logs_pcb/' + args.stn_mode + '/' + str(args.shot) + '/' + args.obj + '/'
     if not os.path.exists(args.save_model_dir):
         os.makedirs(args.save_model_dir)
 

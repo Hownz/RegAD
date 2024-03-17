@@ -7,15 +7,19 @@ import torch
 from torch.utils.data import Dataset
 from torchvision import transforms
 
+# CLASS_NAMES = [
+#     'bottle', 'cable', 'capsule', 'carpet', 'grid', 'hazelnut', 'leather', 'metal_nut', 'pill', 'screw', 'tile',
+#     'toothbrush', 'transistor', 'wood', 'zipper'
+# ]
+
 CLASS_NAMES = [
-    'bottle', 'cable', 'capsule', 'carpet', 'grid', 'hazelnut', 'leather', 'metal_nut', 'pill', 'screw', 'tile',
-    'toothbrush', 'transistor', 'wood', 'zipper'
+    'PCB1', 'PCB2', 'PCB3', 'PCB4', 'PCB5'
 ]
 
 class FSAD_Dataset_train(Dataset):
     def __init__(self,
-                 dataset_path='../data/mvtec_anomaly_detection',
-                 class_name='bottle',
+                 dataset_path='./PCB',
+                 class_name='PCB2',
                  is_train=True,
                  resize=960,
                  shot=2,
@@ -32,7 +36,7 @@ class FSAD_Dataset_train(Dataset):
         self.query_dir, self.support_dir = self.load_dataset_folder()
         # set transforms
         self.transform_x = transforms.Compose([
-            transforms.Resize((resize,resize), Image.ANTIALIAS),
+            transforms.Resize((resize,resize)), # Image.ANTIALIAS),
             transforms.ToTensor(),
             # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         ])
@@ -83,22 +87,22 @@ class FSAD_Dataset_train(Dataset):
         # data_img includes all image pathes, key: class_name like wood, zipper. value: each image path.
         for class_name_one in CLASS_NAMES:
             # 差异化训练其它类，测试当前类
-            # if class_name_one != self.class_name: # 如果不是当前的类别，就将其加入到data_img中
-            #                                       # 这样训练基于配准的FSAD来学习类别不可知的特征配准，使模型能够在不调整正常图像的情况下检测新类别的异常。
-            #     data_img[class_name_one] = [] 
-            #     img_dir = os.path.join(self.dataset_path, class_name_one, phase, 'good')
-            #     img_types = sorted(os.listdir(img_dir)) # 获取当前类别的所有子类别：图片
-            #     for img_type in img_types:
-            #         img_type_dir = os.path.join(img_dir, img_type) 
-            #         data_img[class_name_one].append(img_type_dir) 
-            #     random.shuffle(data_img[class_name_one])
-            data_img[class_name_one] = [] 
-            img_dir = os.path.join(self.dataset_path, class_name_one, phase, 'good')
-            img_types = sorted(os.listdir(img_dir)) # 获取当前类别的所有子类别：图片
-            for img_type in img_types:
-                img_type_dir = os.path.join(img_dir, img_type) 
-                data_img[class_name_one].append(img_type_dir) 
-            random.shuffle(data_img[class_name_one])
+            if class_name_one != self.class_name: # 如果不是当前的类别，就将其加入到data_img中
+                                                  # 这样训练基于配准的FSAD来学习类别不可知的特征配准，使模型能够在不调整正常图像的情况下检测新类别的异常。
+                data_img[class_name_one] = [] 
+                img_dir = os.path.join(self.dataset_path, class_name_one, phase, 'good')
+                img_types = sorted(os.listdir(img_dir)) # 获取当前类别的所有子类别：图片
+                for img_type in img_types:
+                    img_type_dir = os.path.join(img_dir, img_type) 
+                    data_img[class_name_one].append(img_type_dir) 
+                random.shuffle(data_img[class_name_one])
+            # data_img[class_name_one] = [] 
+            # img_dir = os.path.join(self.dataset_path, class_name_one, phase, 'good')
+            # img_types = sorted(os.listdir(img_dir)) # 获取当前类别的所有子类别：图片
+            # for img_type in img_types:
+            #     img_type_dir = os.path.join(img_dir, img_type) 
+            #     data_img[class_name_one].append(img_type_dir) 
+            # random.shuffle(data_img[class_name_one])
 
         query_dir, support_dir = [], []
         for class_name_one in data_img.keys(): # key: class_name like wood, zipper, value: each image path.
@@ -132,21 +136,21 @@ class FSAD_Dataset_train(Dataset):
 
         data_img = {}
         for class_name_one in CLASS_NAMES:
-            # if class_name_one != self.class_name:
-            #     data_img[class_name_one] = []
-            #     img_dir = os.path.join(self.dataset_path, class_name_one, phase, 'good')
-            #     img_types = sorted(os.listdir(img_dir))
-            #     for img_type in img_types:
-            #         img_type_dir = os.path.join(img_dir, img_type)
-            #         data_img[class_name_one].append(img_type_dir)
-            #     random.shuffle(data_img[class_name_one])
-            data_img[class_name_one] = []
-            img_dir = os.path.join(self.dataset_path, class_name_one, phase, 'good')
-            img_types = sorted(os.listdir(img_dir))
-            for img_type in img_types:
-                img_type_dir = os.path.join(img_dir, img_type)
-                data_img[class_name_one].append(img_type_dir)
-            random.shuffle(data_img[class_name_one])
+            if class_name_one != self.class_name:
+                data_img[class_name_one] = []
+                img_dir = os.path.join(self.dataset_path, class_name_one, phase, 'good')
+                img_types = sorted(os.listdir(img_dir))
+                for img_type in img_types:
+                    img_type_dir = os.path.join(img_dir, img_type)
+                    data_img[class_name_one].append(img_type_dir)
+                random.shuffle(data_img[class_name_one])
+            # data_img[class_name_one] = []
+            # img_dir = os.path.join(self.dataset_path, class_name_one, phase, 'good')
+            # img_types = sorted(os.listdir(img_dir))
+            # for img_type in img_types:
+            #     img_type_dir = os.path.join(img_dir, img_type)
+            #     data_img[class_name_one].append(img_type_dir)
+            # random.shuffle(data_img[class_name_one])
 
         query_dir, support_dir = [], []
         for class_name_one in data_img.keys():
@@ -194,7 +198,7 @@ class FSAD_Dataset_test(Dataset):
         self.query_dir, self.support_dir, self.query_mask = self.load_dataset_folder()
         # set transforms
         self.transform_x = transforms.Compose([
-            transforms.Resize(resize, Image.ANTIALIAS),
+            transforms.Resize((resize,resize)), # Image.ANTIALIAS),
             transforms.ToTensor(),
             # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         ])

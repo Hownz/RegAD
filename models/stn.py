@@ -86,35 +86,30 @@ class STNModule(nn.Module):
     #     elif self.stn_mode == 'rotation_translation_scale':
     #         self.fc[2].bias.data.copy_(torch.tensor([0, 0, 0, 1, 1], dtype=torch.float))
             
-    def __init__(self, in_num, feat_size=30, args):
+    def __init__(self, in_num, feat_size=31, stn_mode='translation_scale'):
         super(STNModule, self).__init__()
         # 旧输入 [Batch, 64, 56, 56] [Batch, 128, 28, 28] [Batch, 256, 14, 14]
         # 新输入 [Batch, 512，240，240] [Batch, 512, 240, 240] [Batch, 512, 240, 240]
         self.feat_size = feat_size 
-        self.stn_mode = args.stn_mode
+        self.stn_mode = stn_mode
         self.stn_n_params = N_PARAMS[self.stn_mode] # 旋转+缩放 = 3个参数
 
         self.conv = nn.Sequential(
-            conv1x1(in_planes=in_num, out_planes=256), # 尺寸不变 NewShape: (B, 256, 240, 240) (B, 256, 120, 120) (B, 256, 60, 60)  
+            conv1x1(in_planes=in_num, out_planes=256), # 尺寸不变 NewShape: (B, 256, 243, 243) (B, 256, 120, 120) (B, 256, 60, 60)  
             nn.BatchNorm2d(256),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=3, stride=2, padding=1), # NewShape: (B, 256, 120, 120) 120 = (240-3+2)/2+1
-                                                                        # (B, 256, 60, 60) 60 = (120-3+2)/2+1
-                                                                        # (B, 256, 30, 30) 30 = (60-3+2)/2+1
-            conv3x3(in_planes=256, out_planes=128), # 尺寸不变 OldShape: (B, 64, 56, 56) NewShape: (B, 128, 120, 120) 
-                                                                                                   # (B, 128, 60, 60) 
-                                                                                                   # (B, 128, 30, 30)
+            nn.MaxPool2d(kernel_size=3, stride=2, padding=1), # NewShape: (B, 256, 122, 122) 120 = (243-3+2)/2+1
+
+            conv3x3(in_planes=256, out_planes=128), # 尺寸不变 OldShape: (B, 64, 56, 56) NewShape: (B, 128, 122, 122) 
+
             nn.BatchNorm2d(128),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=3, stride=2, padding=1), # OldShape: (B, 64, 28, 28) 28 = (56-3+2)/2+1 NewShape: (B, 128, 60, 60) 
-                                                                                                                    # (B, 128, 30, 30) 
-                                                                                                                    # (B, 128, 15, 15)
+            nn.MaxPool2d(kernel_size=3, stride=2, padding=1), # OldShape: (B, 64, 28, 28) 28 = (56-3+2)/2+1 NewShape: (B, 128, 61, 61) 
+
             conv3x3(in_planes=128, out_planes=32),
             nn.BatchNorm2d(32),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=3, stride=2, padding=1), # OldShape: (B, 16, 14, 14) 14 = (28-3+2)/2+1 NewShape: (B, 32, 30, 30) 30=(60-3+2)/2+1
-                                                                                                                    # (B, 32, 15, 15)
-                                                                                                                    # (B, 32, 8, 8) 8=(15-3+2)/2+1  
+            nn.MaxPool2d(kernel_size=3, stride=2, padding=1), # OldShape: (B, 16, 14, 14) 14 = (28-3+2)/2+1 NewShape: (B, 32, 30, 30) 31=(60-3+2)/2+1
         )
 
         self.fc = nn.Sequential(
@@ -149,7 +144,7 @@ class STNModule(nn.Module):
         mode = self.stn_mode
         batch_size = x.size(0)
         conv_x = self.conv(x) # 原始输入 torch.Size([32, 16, 14, 14])
-                              # 新输入 torch.Size([32, 256, 30, 30]) torch.Size([32, 128, 15, 15]) torch.Size([32, 32, 8, 8])  
+                              # 新输入 torch.Size([32, 256, 31, 31]) torch.Size([32, 128, 15, 15]) torch.Size([32, 32, 8, 8])  
         theta = self.fc(conv_x.view(batch_size, -1)) # 3个参数=旋转+缩放
 
         if mode == 'affine':
@@ -344,7 +339,7 @@ class ResNet(nn.Module):
         return out
 
 class PDN_M(nn.Module):
-    def __init__(self, args, last_kernel_size=384, with_bn=False) -> None:
+    def __init__(self, last_kernel_size=384, with_bn=False) -> None:
         super().__init__()
         # Layer Name Stride Kernel Size Number of Kernels Padding Activation
         # Conv-1 1×1 4×4 256 3 ReLU
@@ -356,9 +351,9 @@ class PDN_M(nn.Module):
         # Conv-5 1×1 4×4 384 0 ReLU
         # Conv-6 1×1 1×1 384 0 -
         # 输入是[Batch, 3, 256, 256]
-        self.stn1 = STNModule(512, 30, args)
-        self.stn2 = STNModule(512, 30, args)
-        self.stn3 = STNModule(512, 30, args)
+        self.stn1 = STNModule(in_num=512, feat_size=31, stn_mode='rotation_scale')
+        self.stn2 = STNModule(in_num=512, feat_size=31, stn_mode='rotation_scale')
+        self.stn3 = STNModule(in_num=512, feat_size=31, stn_mode='rotation_scale')
         self.with_bn = with_bn
         self.conv1 = nn.Conv2d(3, 256, kernel_size=4, stride=1, padding=3)
         self.conv2 = nn.Conv2d(256, 512, kernel_size=4, stride=1, padding=3)
@@ -387,18 +382,18 @@ class PDN_M(nn.Module):
         # 输入是[Batch, 3, 256, 256]
         # 变为 [Batch, 3, 960, 960]
         x = self.conv1(x) # shape: [Batch, 256, 256, 256] 256 = (256-4+2*3)/1+1 
-                          # new shape: [Batch, 256, 960, 960] 960=(960-4+2*3)/1+1
+                          # new shape: [Batch, 256, 963, 963] 963=(960-4+2*3)/1+1
         x = self.bn1(x) if self.with_bn else x 
         x = F.relu(x) 
         x = self.avgpool1(x) # shape: [Batch, 256, 128, 128] 128 = (256-2+2*1)/2+1
-                             # new shape: [Batch, 256, 480, 480] 480 = (960-2+2*1)/2+1
+                             # new shape: [Batch, 256, 482, 482] 482 = (963-2+2*1)/2+1 
                              
         x = self.conv2(x) # shape: [Batch, 512, 128, 128] 128 = (128-4+2*3)/1+1
-                          # new shape: [Batch, 512, 480, 480] 480 = (480-4+2*3)/1+1
+                          # new shape: [Batch, 512, 485, 485] 485 = (482-4+2*3)/1+1
         x = self.bn2(x) if self.with_bn else x 
         x = F.relu(x) 
         x = self.avgpool2(x) # shape: [Batch, 512, 64, 64] 64 = (128-2+2*1)/2+1
-                             # new shape: [Batch, 512, 240, 240] 240 = (480-2+2*1)/2+1
+                             # new shape: [Batch, 512, 243, 243] 243 = (485-2+2*1)/2+1
         
         # stn1
         x, theta1 = self.stn1(x) # x是变换后的图像，theta1是变换矩阵
@@ -407,7 +402,7 @@ class PDN_M(nn.Module):
         self.stn1_output = self._fixstn(x.detach(), fixthea1) # 可视化的时候用
         
         x = self.conv3(x) # shape: [Batch, 512, 64, 64] 64 = (64-1+2*0)/1+1
-                          # new shape: [Batch, 512, 240, 240] 240 = (240-1+2*0)/1+1
+                          # new shape: [Batch, 512, 243, 243] 243 = (243-1+2*0)/1+1
         x = self.bn3(x) if self.with_bn else x 
         x = F.relu(x)  
         
@@ -418,7 +413,7 @@ class PDN_M(nn.Module):
         self.stn2_output = self._fixstn(x.detach(), fixthea2) # 可视化的时候用
         
         x = self.conv4(x) # shape: [Batch, 512, 64, 64] 64 = (64-3+2*1)/1+1 
-                          # new shape: [Batch, 512, 240, 240] 240 = (240-3+2*1)/1+1
+                          # new shape: [Batch, 512, 243, 243] 243 = (243-3+2*1)/1+1
         x = self.bn4(x) if self.with_bn else x 
         x = F.relu(x)
         
@@ -429,23 +424,23 @@ class PDN_M(nn.Module):
         self.stn3_output = self._fixstn(x.detach(), fixthea3) # 可视化的时候用
         
         x = self.conv5(x) # shape: [Batch, 384, 61, 61] 61 = (64-4+2*0)/1+1
-                          # new shape: [Batch, 384, 240, 240] 237 = (240-4+2*0)/1+1
+                          # new shape: [Batch, 384, 240, 240] 240 = (243-4+2*0)/1+1
         x = self.bn5(x) if self.with_bn else x
         x = F.relu(x)
         
         x = self.conv6(x) # shape: [Batch, 384, 61, 61] 61 = (61-1+2*0)/1+1
-                          # new shape: [Batch, 384, 240, 240] 237 = (237-1+2*0)/1+1
+                          # new shape: [Batch, 384, 240, 240] 240 = (240-1+2*0)/1+1
         x = self.bn6(x) if self.with_bn else x 
         return x
 
-def stn_net(args, pretrained=True, **kwargs):
+def stn_net(pretrained=True, **kwargs):
     """Constructs a ResNet-18 model.
     Args:
         pretrained (bool): If True, returns a model pre-trained on ImageNet
     """
     # model = ResNet(args, BasicBlock, [2, 2, 2, 2], **kwargs)
-    model = PDN_M(args, last_kernel_size=384, with_bn=False)
+    model = PDN_M(last_kernel_size=384, with_bn=False)
     if pretrained:
-        model.load_state_dict(torch.load('/best_teacher.pth'))
+        model.load_state_dict(torch.load('./pth/best_teacher.pth'), strict=False)
         # model.load_state_dict(model_zoo.load_url(model_urls['resnet18']), strict=False)
     return model
