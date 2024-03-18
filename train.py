@@ -34,7 +34,7 @@ def main():
     parser.add_argument('--lr', type=float, default=0.0001, help='learning rate of others in SGD')
     parser.add_argument('--momentum', type=float, default=0.9, help='momentum of SGD')
     parser.add_argument('--seed', type=int, default=668, help='manual seed')
-    parser.add_argument('--shot', type=int, default=2, help='shot count')
+    parser.add_argument('--shot', type=int, default=1, help='shot count')
     parser.add_argument('--inferences', type=int, default=10, help='number of rounds per inference')
     parser.add_argument('--stn_mode', type=str, default='rotation_scale',
                         help='[affine, translation, rotation, scale, shear, rotation_scale, translation_scale, rotation_translation, rotation_translation_scale]')
@@ -62,9 +62,13 @@ def main():
     print_log(state, log)
 
     # load model and dataset
-    STN = stn_net().to(device)
+    STN = stn_net(pretrained=False).to(device)
     ENC = Encoder().to(device)
     PRED = Predictor().to(device)
+
+    STN.load_state_dict(torch.load('logs_pcb/rotation_scale/1/PCB2/PCB2_1_rotation_scale_model.pt')['STN'], strict=False) # strict=False 时，意味着加载过程中可以忽略一些不匹配的键（keys）和形状（shapes）
+    ENC.load_state_dict(torch.load('logs_pcb/rotation_scale/1/PCB2/PCB2_1_rotation_scale_model.pt')['ENC'], strict=False) 
+    PRED.load_state_dict(torch.load('logs_pcb/rotation_scale/1/PCB2/PCB2_1_rotation_scale_model.pt')['PRED'], strict=False) 
 
     print(STN)
 

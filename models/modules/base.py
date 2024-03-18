@@ -1,6 +1,16 @@
 ﻿import torch
 import torch.nn as nn
 
+def has_weights(model):
+    '''
+    检查模型的权重
+    '''
+    for name, param in model.named_parameters():
+        if param.requires_grad and param.numel() > 0:
+            print(f"Layer {name} has weights.")
+        else:
+            print(f"Layer {name} does not have weights.")
+
 def Conv3x3BNReLU(in_channels,out_channels,stride,padding=1):
     return nn.Sequential(
             nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=3, stride=stride, padding=1),

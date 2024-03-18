@@ -9,6 +9,7 @@ from torch.autograd import Variable
 import numpy as np
 from models.modules.sppf import SPPF
 from models.modules.base import *
+import matplotlib.pyplot as plt
 
 model_urls = {
     'resnet18': 'https://download.pytorch.org/models/resnet18-5c106cde.pth',
@@ -111,9 +112,9 @@ class STNModule(nn.Module):
             nn.MaxPool2d(kernel_size=3, stride=2, padding=1), # NewShape: (B, 128, 122, 122) 122 = (243-3+2)/2+1
                                                               # NewShape: (B, 128, 114, 114) 114 = (228-3+2)/2+1
                                                               # NewShape: (B, 128, 87, 87) 87 = (173-3+2)/2+1
-            SPPF(128, self.feat_out), # shape 不变
+            # SPPF(128, self.feat_out), # shape 不变
 
-            # conv1x1(in_planes=128, out_planes=self.feat_out),
+            conv1x1(in_planes=128, out_planes=self.feat_out),
             nn.BatchNorm2d(self.feat_out),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=3, stride=2, padding=1), #  (B, 1, 61, 61) 61=(122-3+2)/2+1 # 61*61=3721
@@ -433,7 +434,7 @@ class PDN_M(nn.Module):
         x, theta2 = self.stn2(x)
         tmp = np.tile(np.array([0, 0, 1]), (x.shape[0], 1, 1)).astype(np.float32)
         fixthea2 = torch.from_numpy(np.linalg.inv(np.concatenate((theta2.detach().cpu().numpy(), tmp), axis=1))[:,:-1,:]).cuda(1)
-        self.stn2_output = self._fixstn(x.detach(), fixthea2) # 可视化的时候用
+        self.stn2_output = self._fixstn(self._fixstn(x.detach(), fixthea2), fixthea1) # 恢复
         
         x = self.conv4(x) # shape: [Batch, 512, 64, 64] 64 = (64-3+2*1)/1+1 
                           # new shape: [Batch, 512, 243, 243] 243 = (243-3+2*1)/1+1
@@ -443,12 +444,12 @@ class PDN_M(nn.Module):
         x = F.relu(x)
         
         # stn3
-        x, theta3 = self.stn3(x)
+        out, theta3 = self.stn3(x)
         tmp = np.tile(np.array([0, 0, 1]), (x.shape[0], 1, 1)).astype(np.float32)
         fixthea3 = torch.from_numpy(np.linalg.inv(np.concatenate((theta3.detach().cpu().numpy(), tmp), axis=1))[:,:-1,:]).cuda(1)
-        self.stn3_output = self._fixstn(x.detach(), fixthea3) # 可视化的时候用
+        self.stn3_output = self._fixstn(self._fixstn(self._fixstn(out.detach(), fixthea3), fixthea2), fixthea1) # 恢复
         
-        x = self.conv5(x) # shape: [Batch, 384, 61, 61] 61 = (64-4+2*0)/1+1
+        x = self.conv5(out) # shape: [Batch, 384, 61, 61] 61 = (64-4+2*0)/1+1
                           # new shape: [Batch, 384, 240, 240] 240 = (243-4+2*0)/1+1
                           # new shape: [Batch, 384, 225, 225] 225 = (228-4+2*0)/1+1
                           # new shape: [Batch, 384, 170, 170] 170 = (173-4+2*0)/1+1
