@@ -20,7 +20,7 @@ from collections import OrderedDict
 import warnings
 warnings.filterwarnings("ignore")
 use_cuda = torch.cuda.is_available()
-device = torch.device('cuda' if use_cuda else 'cpu')
+device = torch.device('cuda:1' if use_cuda else 'cpu')
 
 def main():
     
@@ -29,7 +29,7 @@ def main():
     parser.add_argument('--obj', type=str, default='PCB2')
     parser.add_argument('--data_path', type=str, default='./PCB')
     parser.add_argument('--epochs', type=int, default=50, help='maximum training epochs')
-    parser.add_argument('--batch_size', type=int, default=4)
+    parser.add_argument('--batch_size', type=int, default=1)
     parser.add_argument('--img_size', type=int, default=680)
     parser.add_argument('--lr', type=float, default=0.0001, help='learning rate of others in SGD')
     parser.add_argument('--momentum', type=float, default=0.9, help='momentum of SGD')

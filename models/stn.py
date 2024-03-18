@@ -330,21 +330,21 @@ class ResNet(nn.Module):
         x = self.layer1(x) # torch.Size([32, 64, 56, 56]) 56 = (56-3)/1+1 
         x, theta1 = self.stn1(x) # x是变换后的图像，theta1是变换矩阵
         tmp = np.tile(np.array([0, 0, 1]), (x.shape[0], 1, 1)).astype(np.float32)
-        fixthea1 = torch.from_numpy(np.linalg.inv(np.concatenate((theta1.detach().cpu().numpy(), tmp), axis=1))[:,:-1,:]).cuda()
+        fixthea1 = torch.from_numpy(np.linalg.inv(np.concatenate((theta1.detach().cpu().numpy(), tmp), axis=1))[:,:-1,:]).cuda(1)
         self.stn1_output = self._fixstn(x.detach(), fixthea1) # 可视化的时候用
         # after layer1 shape:  torch.Size([32, 64, 56, 56])
 
         x = self.layer2(x) # torch.Size([32, 128, 28, 28]) 28 = (56-3)/2+1
         x, theta2 = self.stn2(x)
         tmp = np.tile(np.array([0, 0, 1]), (x.shape[0], 1, 1)).astype(np.float32)
-        fixthea2 = torch.from_numpy(np.linalg.inv(np.concatenate((theta2.detach().cpu().numpy(), tmp), axis=1))[:,:-1,:]).cuda()
+        fixthea2 = torch.from_numpy(np.linalg.inv(np.concatenate((theta2.detach().cpu().numpy(), tmp), axis=1))[:,:-1,:]).cuda(1)
         self.stn2_output = self._fixstn(self._fixstn(x.detach(), fixthea2), fixthea1) # 恢复
         # after layer2 shape:  torch.Size([32, 128, 28, 28])
 
         x = self.layer3(x) # torch.Size([32, 256, 14, 14]) 14 = (28-3)/2+1
         out, theta3 = self.stn3(x)
         tmp = np.tile(np.array([0, 0, 1]), (x.shape[0], 1, 1)).astype(np.float32)
-        fixthea3 = torch.from_numpy(np.linalg.inv(np.concatenate((theta3.detach().cpu().numpy(), tmp), axis=1))[:,:-1,:]).cuda()
+        fixthea3 = torch.from_numpy(np.linalg.inv(np.concatenate((theta3.detach().cpu().numpy(), tmp), axis=1))[:,:-1,:]).cuda(1)
         self.stn3_output = self._fixstn(self._fixstn(self._fixstn(out.detach(), fixthea3), fixthea2), fixthea1) # 恢复
         # after layer3 shape:  torch.Size([32, 256, 14, 14])
 
@@ -419,7 +419,7 @@ class PDN_M(nn.Module):
         # stn1
         x, theta1 = self.stn1(x) # x是变换后的图像，theta1是变换矩阵
         tmp = np.tile(np.array([0, 0, 1]), (x.shape[0], 1, 1)).astype(np.float32)
-        fixthea1 = torch.from_numpy(np.linalg.inv(np.concatenate((theta1.detach().cpu().numpy(), tmp), axis=1))[:,:-1,:]).cuda()
+        fixthea1 = torch.from_numpy(np.linalg.inv(np.concatenate((theta1.detach().cpu().numpy(), tmp), axis=1))[:,:-1,:]).cuda(1)
         self.stn1_output = self._fixstn(x.detach(), fixthea1) # 可视化的时候用
         
         x = self.conv3(x) # shape: [Batch, 512, 64, 64] 64 = (64-1+2*0)/1+1
@@ -432,7 +432,7 @@ class PDN_M(nn.Module):
         # stn2  
         x, theta2 = self.stn2(x)
         tmp = np.tile(np.array([0, 0, 1]), (x.shape[0], 1, 1)).astype(np.float32)
-        fixthea2 = torch.from_numpy(np.linalg.inv(np.concatenate((theta2.detach().cpu().numpy(), tmp), axis=1))[:,:-1,:]).cuda()
+        fixthea2 = torch.from_numpy(np.linalg.inv(np.concatenate((theta2.detach().cpu().numpy(), tmp), axis=1))[:,:-1,:]).cuda(1)
         self.stn2_output = self._fixstn(x.detach(), fixthea2) # 可视化的时候用
         
         x = self.conv4(x) # shape: [Batch, 512, 64, 64] 64 = (64-3+2*1)/1+1 
@@ -445,7 +445,7 @@ class PDN_M(nn.Module):
         # stn3
         x, theta3 = self.stn3(x)
         tmp = np.tile(np.array([0, 0, 1]), (x.shape[0], 1, 1)).astype(np.float32)
-        fixthea3 = torch.from_numpy(np.linalg.inv(np.concatenate((theta3.detach().cpu().numpy(), tmp), axis=1))[:,:-1,:]).cuda()
+        fixthea3 = torch.from_numpy(np.linalg.inv(np.concatenate((theta3.detach().cpu().numpy(), tmp), axis=1))[:,:-1,:]).cuda(1)
         self.stn3_output = self._fixstn(x.detach(), fixthea3) # 可视化的时候用
         
         x = self.conv5(x) # shape: [Batch, 384, 61, 61] 61 = (64-4+2*0)/1+1
