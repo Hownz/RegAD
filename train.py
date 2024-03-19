@@ -12,7 +12,7 @@ from datasets.mvtec import FSAD_Dataset_train, FSAD_Dataset_test
 from utils.utils import time_file_str, time_string, convert_secs2time, AverageMeter, print_log
 from models.siamese import Encoder, Predictor
 from models.stn import stn_net
-from losses.norm_loss import CosLoss
+from losses import *
 from utils.funcs import embedding_concat, mahalanobis_torch, rot_img, translation_img, hflip_img, rot90_img, grey_img
 from sklearn.metrics import roc_auc_score
 from scipy.ndimage import gaussian_filter
@@ -23,14 +23,12 @@ use_cuda = torch.cuda.is_available()
 device = torch.device('cuda:1' if use_cuda else 'cpu')
 
 def main():
-    
-
     parser = argparse.ArgumentParser(description='Registration based Few-Shot Anomaly Detection')
     parser.add_argument('--obj', type=str, default='PCB2')
     parser.add_argument('--data_path', type=str, default='./PCB')
     parser.add_argument('--epochs', type=int, default=50, help='maximum training epochs')
     parser.add_argument('--batch_size', type=int, default=1)
-    parser.add_argument('--img_size', type=int, default=680)
+    parser.add_argument('--img_size', type=int, default=960)
     parser.add_argument('--lr', type=float, default=0.0001, help='learning rate of others in SGD')
     parser.add_argument('--momentum', type=float, default=0.9, help='momentum of SGD')
     parser.add_argument('--seed', type=int, default=668, help='manual seed')
@@ -62,6 +60,7 @@ def main():
     print_log(state, log)
 
     # load model and dataset
+    # 加载模型
     STN = stn_net(pretrained=False).to(device)
     ENC = Encoder().to(device)
     PRED = Predictor().to(device)
@@ -72,13 +71,18 @@ def main():
 
     print(STN)
 
+    # 模型优化器
     STN_optimizer = optim.SGD(STN.parameters(), lr=args.lr, momentum=args.momentum)
     ENC_optimizer = optim.SGD(ENC.parameters(), lr=args.lr, momentum=args.momentum)
     PRED_optimizer = optim.SGD(PRED.parameters(), lr=args.lr, momentum=args.momentum)
     models = [STN, ENC, PRED]
     optimizers = [STN_optimizer, ENC_optimizer, PRED_optimizer]
     init_lrs = [args.lr, args.lr, args.lr]
+    losses = [SimMaxLoss(metric='cos', alpha=args.alpha).cuda(), 
+              SimMinLoss(metric='cos').cuda(),
+              SimMaxLoss(metric='cos', alpha=args.alpha).cuda()]
 
+    # 加载数据集
     print('Loading Datasets')
     kwargs = {'num_workers': 4, 'pin_memory': True} if use_cuda else {}
     train_dataset = FSAD_Dataset_train(args.data_path, class_name=args.obj, is_train=True, resize=args.img_size, shot=args.shot, batch=args.batch_size)
@@ -96,7 +100,7 @@ def main():
         need_time = '[Need: {:02d}:{:02d}:{:02d}]'.format(need_hour, need_mins, need_secs)
         print_log(' {:3d}/{:3d} ----- [{:s}] {:s}'.format(epoch, args.epochs, time_string(), need_time), log)
 
-        train(models, epoch, train_loader, optimizers, log)
+        train(models, epoch, train_loader, optimizers, losses, log)
         train_dataset.shuffle_dataset()
         train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=1, shuffle=True, **kwargs)
         
@@ -106,7 +110,7 @@ def main():
         
     log.close()
 
-def train(models, epoch, train_loader, optimizers, log):
+def train(models, epoch, train_loader, optimizers, losses, log):
     STN = models[0]
     ENC = models[1]
     PRED = models[2]
@@ -118,6 +122,12 @@ def train(models, epoch, train_loader, optimizers, log):
     STN.train()
     ENC.train()
     PRED.train()
+    
+    
+    query_train_outputs_fg = OrderedDict([('layer1', []), ('layer2', [])]) # 初始化一个有序字典
+    query_train_outputs_bg = OrderedDict([('layer1', []), ('layer2', [])]) # 初始化一个有序字典
+    support_train_outputs_fg = OrderedDict([('layer1', []), ('layer2', [])]) # 初始化一个有序字典
+    support_train_outputs_bg = OrderedDict([('layer1', []), ('layer2', [])]) # 初始化一个有序字典
 
     total_losses = AverageMeter() # 初始化一个计算平均值的类
 
@@ -133,6 +143,18 @@ def train(models, epoch, train_loader, optimizers, log):
         support_img = support_img_list.squeeze(0).to(device) # 将support_img从(类别,Batch,2,3,224,224)转换为(Batch,2,3,224,224)
         B,K,C,H,W = support_img.shape # B是batch_size，K是支持集的个数，C是通道数，H是高度，W是宽度
 
+        query_train_outputs_fg['layer1'].append(STN.fg1) # 将STN.stn1_output拼接到train_outputs['layer1']中
+        query_train_outputs_fg['layer2'].append(STN.fg2) # 将STN.stn2_output拼接到train_outputs['layer2']中
+        for k, v in query_train_outputs_fg.items():
+            # k is layer name, v is list of tensor
+            query_train_outputs_fg[k] = torch.cat(v, 0) # 将train_outputs[k]拼接起来
+            
+        query_train_outputs_bg['layer1'].append(STN.bg1) # 将STN.stn1_output拼接到train_outputs['layer1']中
+        query_train_outputs_bg['layer2'].append(STN.bg2) # 将STN.stn2_output拼接到train_outputs['layer2']中
+        for k, v in query_train_outputs_bg.items():
+            # k is layer name, v is list of tensor
+            query_train_outputs_bg[k] = torch.cat(v, 0) # 将train_outputs[k]拼接起来
+
         support_img = support_img.view(B * K, C, H, W)
         support_feat = STN(support_img)
         support_feat = support_feat / K # 将support_feat除以K，得到平均值
@@ -147,9 +169,29 @@ def train(models, epoch, train_loader, optimizers, log):
         z2 = ENC(support_feat) # 将support_feat输入到ENC中，得到z2
         p2 = PRED(z2) # 将z2输入到PRED中，得到p2
         
-        total_loss = CosLoss(p1,z2, Mean=True)/2 + CosLoss(p2,z1, Mean=True)/2
+        support_train_outputs_fg['layer1'].append(STN.fg1) # 将STN.stn1_output拼接到train_outputs['layer1']中
+        support_train_outputs_fg['layer2'].append(STN.fg2) # 将STN.stn2_output拼接到train_outputs['layer2']中
+        for k, v in support_train_outputs_fg.items():
+            # k is layer name, v is list of tensor
+            support_train_outputs_fg[k] = torch.cat(v, 0) # 将train_outputs[k]拼接起来
+            
+        support_train_outputs_bg['layer1'].append(STN.bg1) # 将STN.stn1_output拼接到train_outputs['layer1']中
+        support_train_outputs_bg['layer2'].append(STN.bg2) # 将STN.stn2_output拼接到train_outputs['layer2']中
+        for k, v in support_train_outputs_bg.items():
+            # k is layer name, v is list of tensor
+            support_train_outputs_bg[k] = torch.cat(v, 0) # 将train_outputs[k]拼接起来
+        
+        loss1 = (losses[0](support_train_outputs_fg[0], query_train_outputs_fg[0]) + 
+                 losses[0](support_train_outputs_fg[1], query_train_outputs_fg[1])) / 2 # SimMaxLoss
+        loss2 = (losses[1](support_train_outputs_fg[0], support_train_outputs_bg[0]) +
+                 losses[1](support_train_outputs_fg[1], support_train_outputs_bg[1]) + 
+                 losses[1](query_train_outputs_fg[0], query_train_outputs_bg[0]) + 
+                 losses[1](query_train_outputs_fg[1], query_train_outputs_bg[1])) / 4 # SimMinLoss
+        loss3 = (losses[2](support_train_outputs_bg[0], query_train_outputs_bg[0]) + 
+                 losses[2](support_train_outputs_bg[1], query_train_outputs_bg[1])) / 2 # SimMaxLoss
+            
+        total_loss = CosLoss(p1,z2, Mean=True)/2 + CosLoss(p2,z1, Mean=True)/2 + loss1 + loss2 + loss3
         total_losses.update(total_loss.item(), query_img.size(0)) # 计算平均值 query_img shape (3,224,224) size(0) = 3
-
         total_loss.backward() # 一个孪生网络，更新参数，防止梯度爆炸
 
         STN_optimizer.step()

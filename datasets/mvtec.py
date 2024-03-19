@@ -6,6 +6,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 from torchvision import transforms
+import torch.nn.functional as F
 
 # CLASS_NAMES = [
 #     'bottle', 'cable', 'capsule', 'carpet', 'grid', 'hazelnut', 'leather', 'metal_nut', 'pill', 'screw', 'tile',
@@ -15,6 +16,9 @@ from torchvision import transforms
 CLASS_NAMES = [
     'PCB1', 'PCB2', 'PCB3', 'PCB4', 'PCB5'
 ]
+
+
+
 class FSAD_Dataset_train(Dataset):
     def __init__(self,
                  dataset_path='./PCB',
@@ -39,6 +43,16 @@ class FSAD_Dataset_train(Dataset):
             transforms.ToTensor(),
             # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         ])
+    def choose_random_aug_image(self, image):
+        aug_index = random.choice([1,2,3])
+        coefficient = random.uniform(0.8,1.2)
+        if aug_index == 1:
+            img_aug = transforms.functional.adjust_brightness(image,coefficient)
+        elif aug_index == 2:
+            img_aug = transforms.functional.adjust_contrast(image,coefficient)
+        elif aug_index == 3:
+            img_aug = transforms.functional.adjust_saturation(image,coefficient)
+        return img_aug
 
     def __getitem__(self, idx):
         query_list, support_list = self.query_dir[idx], self.support_dir[idx]
@@ -49,6 +63,7 @@ class FSAD_Dataset_train(Dataset):
         for i in range(len(query_list)):
             image = Image.open(query_list[i]).convert('RGB')
             image = self.transform_x(image) #image_shape torch.Size([3, 224, 224])
+            image = self.choose_random_aug_image(image) # 增强处理
             image = image.unsqueeze(dim=0) #image_shape torch.Size([1, 3, 224, 224])
             if query_img is None:
                 query_img = image
