@@ -7,7 +7,7 @@ from torchvision.models import resnet18
 import torch.utils.model_zoo as model_zoo
 from torch.autograd import Variable
 import numpy as np
-from modules import *
+from .modules import *
 import matplotlib.pyplot as plt
 
 model_urls = {
@@ -241,22 +241,22 @@ class PDN_M(nn.Module):
         # 输入是[Batch, 3, 256, 256]
         # 960=>61/60 900=>57 680=>44
         
-        self.fg1 = 0
-        self.bg2 = 0
-        self.ccam1 = 0
+        # self.fg1 = 0
+        # self.bg2 = 0
+        # self.ccam1 = 0
         self.stn1_output = 0
-        self.fg2 = 0
-        self.bg2 = 0
-        self.ccam2 = 0
+        # self.fg2 = 0
+        # self.bg2 = 0
+        # self.ccam2 = 0
         self.stn2_output = 0
-        self.with_bn = with_bn
-        
-        self.cbam1 = CBAM(channel=512)
-        self.cbam2 = CBAM(channel=384)
+
+        # self.cbam1 = CBAM(channel=512)
+        # self.cbam2 = CBAM(channel=384)
 
         self.stn1 = STNModule(feat_in=512, feat_out=1, feat_size=61, stn_mode='rotation_scale') 
         self.stn2 = STNModule(feat_in=384, feat_out=1, feat_size=60, stn_mode='rotation_scale')
 
+        self.with_bn = with_bn
         self.conv1 = nn.Conv2d(3, 256, kernel_size=4, stride=1, padding=3)
         self.conv2 = nn.Conv2d(256, 512, kernel_size=4, stride=1, padding=3)
         self.conv3 = nn.Conv2d(512, 512, kernel_size=1, stride=1, padding=0)
@@ -321,15 +321,15 @@ class PDN_M(nn.Module):
         x = F.relu(x)
         
         # stn1
-        x, ccam1, fg1, bg1 = self.cbam1(x)
-        if x.size(0) != 1:
-            self.fg1 = torch.mean(fg1, dim=0)
-            self.bg1 = torch.mean(bg1, dim=0)
-            self.ccam1 = torch.mean(ccam1, dim=0)
-        else:
-            self.fg1 = fg1
-            self.bg1 = bg1
-            self.ccam1 = ccam1
+        # x, ccam1, fg1, bg1 = self.cbam1(x)
+        # if x.size(0) != 1:
+        #     self.fg1 = torch.mean(fg1, dim=0).detach().cpu().numpy()
+        #     self.bg1 = torch.mean(bg1, dim=0).detach().cpu().numpy()
+        #     self.ccam1 = torch.mean(ccam1, dim=0).detach().cpu().numpy()
+        # else:
+        #     self.fg1 = fg1
+        #     self.bg1 = bg1
+        #     self.ccam1 = ccam1
         x, theta1 = self.stn1(x) # x是变换后的图像，theta1是变换矩阵
         tmp = np.tile(np.array([0, 0, 1]), (x.shape[0], 1, 1)).astype(np.float32)
         fixthea1 = torch.from_numpy(np.linalg.inv(np.concatenate((theta1.detach().cpu().numpy(), tmp), axis=1))[:,:-1,:]).cuda(1)
@@ -343,15 +343,15 @@ class PDN_M(nn.Module):
         x = F.relu(x)
         
         # stn2  
-        x, ccam2, fg2, bg2 = self.cbam2(x)
-        if x.size(0) != 1:
-            self.fg2 = torch.mean(fg2, dim=0)
-            self.bg2 = torch.mean(bg2, dim=0)
-            self.ccam2 = torch.mean(ccam2, dim=0)
-        else:
-            self.fg2 = fg2
-            self.bg2 = bg2
-            self.ccam2 = ccam2
+        # x, ccam2, fg2, bg2 = self.cbam2(x)
+        # if x.size(0) != 1:
+        #     self.fg2 = torch.mean(fg2, dim=0).detach().cpu().numpy()
+        #     self.bg2 = torch.mean(bg2, dim=0).detach().cpu().numpy()
+        #     self.ccam2 = torch.mean(ccam2, dim=0).detach().cpu().numpy()
+        # else:
+        #     self.fg2 = fg2
+        #     self.bg2 = bg2
+        #     self.ccam2 = ccam2
         out, theta2 = self.stn2(x)
         tmp = np.tile(np.array([0, 0, 1]), (x.shape[0], 1, 1)).astype(np.float32)
         fixthea2 = torch.from_numpy(np.linalg.inv(np.concatenate((theta2.detach().cpu().numpy(), tmp), axis=1))[:,:-1,:]).cuda(1)
@@ -371,14 +371,10 @@ def stn_net(pretrained=True, **kwargs):
     """
     # model = ResNet(args, BasicBlock, [2, 2, 2, 2], **kwargs)
     model = PDN_M(last_kernel_size=384, with_bn=False)
-    if pretrained:
-        model.load_state_dict(torch.load('./pth/best_teacher.pth'), strict=False)
+    # if pretrained:
+    #     model.load_state_dict(torch.load('./pth/best_teacher.pth'), strict=False)
         # model.load_state_dict(model_zoo.load_url(model_urls['resnet18']), strict=False)
     return model
-
-
-
-
 
 class BasicBlock(nn.Module):
     expansion: int = 1

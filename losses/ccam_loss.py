@@ -65,7 +65,7 @@ class SimMaxLoss(nn.Module):
         self.alpha = alpha
         self.reduction = reduction
 
-    def forward(self, embedded_bg):
+    def forward(self, embedded_bg1, embedded_bg2):
         """
         :param embedded_fg: [N, C]
         :param embedded_bg: [N, C]
@@ -75,7 +75,7 @@ class SimMaxLoss(nn.Module):
             raise NotImplementedError # 含义是：每个样本的前景特征，matul是点乘
 
         elif self.metric == 'cos':
-            sim = cos_simi(embedded_bg, embedded_bg)
+            sim = cos_simi(embedded_bg1, embedded_bg2)
             loss = -torch.log(sim)
             loss[loss < 0] = 0
             _, indices = sim.sort(descending=True, dim=1)

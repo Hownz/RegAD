@@ -14,9 +14,103 @@ import torch.nn.functional as F
 # ]
 
 CLASS_NAMES = [
-    'PCB1', 'PCB2', 'PCB3', 'PCB4', 'PCB5'
+    'PCB1', 'PCB2', 'PCB3', 'PCB4' # , 'PCB5'
 ]
 
+class FSAD_Dataset_support(Dataset):
+    def __init__(self,
+                 dataset_path='./PCB',
+                 class_name='PCB2',
+                 is_train=True,
+                 resize=680,
+                 shot=2,
+                 batch=32
+                 ):
+        assert class_name in CLASS_NAMES, 'class_name: {}, should be in {}'.format(class_name, CLASS_NAMES)
+        self.dataset_path = dataset_path
+        self.class_name = class_name
+        self.is_train = is_train
+        self.resize = resize
+        self.shot = shot
+        self.batch = batch
+        # load dataset
+        self.support_dir = self.load_dataset_folder()
+        # set transforms
+        self.transform_x = transforms.Compose([
+            transforms.Resize((resize,resize)), # Image.ANTIALIAS),
+            transforms.ToTensor(),
+            # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
+        
+    def choose_random_aug_image(self, image):
+        aug_index = random.choice([1,2,3])
+        coefficient = random.uniform(0.8,1.2)
+        if aug_index == 1:
+            img_aug = transforms.functional.adjust_brightness(image,coefficient)
+        elif aug_index == 2:
+            img_aug = transforms.functional.adjust_contrast(image,coefficient)
+        elif aug_index == 3:
+            img_aug = transforms.functional.adjust_saturation(image,coefficient)
+        return img_aug
+
+    def __getitem__(self, idx):
+        support_list = self.support_dir[idx]
+        support_sub_img = None
+        support_img = None
+
+        for i in range(len(support_list)):
+            for k in range(self.shot):
+                image = Image.open(support_list[i][k]).convert('RGB')
+                image = self.transform_x(image)
+                # image = self.choose_random_aug_image(image) # 增强处理
+                image = image.unsqueeze(dim=0) # image_shape torch.Size([k, 3, 224, 224])
+                if support_sub_img is None:
+                    support_sub_img = image
+                else:
+                    support_sub_img = torch.cat([support_sub_img, image], dim=0) # support_sub_img_shape torch.Size([2, 3, 224, 224])
+
+            if support_img is None:
+                support_img = support_sub_img
+            else:
+                support_img = torch.cat([support_img, support_sub_img], dim=0) # 这里是按照批次
+
+            support_sub_img = None
+        return support_img
+
+    def __len__(self):
+        return len(self.support_dir)
+
+    def load_dataset_folder(self):
+        phase = 'train' if self.is_train else 'test'
+
+        data_img = {}
+        if self.class_name in CLASS_NAMES:
+            data_img[self.class_name] = []
+            img_dir = os.path.join(self.dataset_path, self.class_name, phase, 'good')
+            img_types = sorted(os.listdir(img_dir))
+            for img_type in img_types:
+                img_type_dir = os.path.join(img_dir, img_type)
+                data_img[self.class_name].append(img_type_dir)
+            random.shuffle(data_img[self.class_name])
+
+        support_dir = []
+        if self.class_name in data_img.keys():
+            # 单类
+            for image_index in range(0, len(data_img[self.class_name]), self.batch):
+                support_sub_dir = []
+                for batch_count in range(0, self.batch):
+                    if image_index + batch_count >= len(data_img[self.class_name]):
+                        break
+                    image_dir_one = data_img[self.class_name][image_index + batch_count]
+                    support_dir_one = []
+                    for k in range(self.shot):
+                        random_choose = random.randint(0, (len(data_img[self.class_name]) - 1))
+                        while data_img[self.class_name][random_choose] == image_dir_one:
+                            random_choose = random.randint(0, (len(data_img[self.class_name]) - 1))
+                        support_dir_one.append(data_img[self.class_name][random_choose])
+                    support_sub_dir.append(support_dir_one)
+                support_dir.append(support_sub_dir)
+        return support_dir
 
 
 class FSAD_Dataset_train(Dataset):
@@ -43,6 +137,7 @@ class FSAD_Dataset_train(Dataset):
             transforms.ToTensor(),
             # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         ])
+        
     def choose_random_aug_image(self, image):
         aug_index = random.choice([1,2,3])
         coefficient = random.uniform(0.8,1.2)
@@ -61,6 +156,7 @@ class FSAD_Dataset_train(Dataset):
         support_img = None
 
         for i in range(len(query_list)):
+            # 查询集（1）
             image = Image.open(query_list[i]).convert('RGB')
             image = self.transform_x(image) #image_shape torch.Size([3, 224, 224])
             image = self.choose_random_aug_image(image) # 增强处理
@@ -69,10 +165,11 @@ class FSAD_Dataset_train(Dataset):
                 query_img = image
             else:
                 query_img = torch.cat([query_img, image],dim=0)
-
+            # 支持集
             for k in range(self.shot):
                 image = Image.open(support_list[i][k]).convert('RGB')
                 image = self.transform_x(image)
+                image = self.choose_random_aug_image(image) # 增强处理
                 image = image.unsqueeze(dim=0) # image_shape torch.Size([k, 3, 224, 224])
                 if support_sub_img is None:
                     support_sub_img = image

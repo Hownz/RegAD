@@ -78,17 +78,17 @@ def main():
     models = [STN, ENC, PRED]
     optimizers = [STN_optimizer, ENC_optimizer, PRED_optimizer]
     init_lrs = [args.lr, args.lr, args.lr]
-    losses = [SimMaxLoss(metric='cos', alpha=args.alpha).cuda(), 
+    losses = [SimMaxLoss(metric='cos', alpha=0.25).cuda(), 
               SimMinLoss(metric='cos').cuda(),
-              SimMaxLoss(metric='cos', alpha=args.alpha).cuda()]
+              SimMaxLoss(metric='cos', alpha=0.25).cuda()]
 
     # 加载数据集
     print('Loading Datasets')
     kwargs = {'num_workers': 4, 'pin_memory': True} if use_cuda else {}
     train_dataset = FSAD_Dataset_train(args.data_path, class_name=args.obj, is_train=True, resize=args.img_size, shot=args.shot, batch=args.batch_size)
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=1, shuffle=True, **kwargs)
-    test_dataset = FSAD_Dataset_test(args.data_path, class_name=args.obj, is_train=False, resize=args.img_size, shot=args.shot)
-    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False, **kwargs)
+    # test_dataset = FSAD_Dataset_test(args.data_path, class_name=args.obj, is_train=False, resize=args.img_size, shot=args.shot)
+    # test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False, **kwargs)
 
     # start training
     save_name = os.path.join(args.save_model_dir, '{}_{}_{}_model.pt'.format(args.obj, args.shot, args.stn_mode))
@@ -122,12 +122,6 @@ def train(models, epoch, train_loader, optimizers, losses, log):
     STN.train()
     ENC.train()
     PRED.train()
-    
-    
-    query_train_outputs_fg = OrderedDict([('layer1', []), ('layer2', [])]) # 初始化一个有序字典
-    query_train_outputs_bg = OrderedDict([('layer1', []), ('layer2', [])]) # 初始化一个有序字典
-    support_train_outputs_fg = OrderedDict([('layer1', []), ('layer2', [])]) # 初始化一个有序字典
-    support_train_outputs_bg = OrderedDict([('layer1', []), ('layer2', [])]) # 初始化一个有序字典
 
     total_losses = AverageMeter() # 初始化一个计算平均值的类
 
@@ -136,24 +130,29 @@ def train(models, epoch, train_loader, optimizers, losses, log):
         ENC_optimizer.zero_grad()
         PRED_optimizer.zero_grad()
 
-        # query_img: (类别,Batch,3,224,224) support_img_list: (类别,Batch,2,3,224,224)
+        # query_train_outputs_fg = OrderedDict([('layer1', []), ('layer2', [])]) # 初始化一个有序字典
+        # query_train_outputs_bg = OrderedDict([('layer1', []), ('layer2', [])]) # 初始化一个有序字典
+        # support_train_outputs_fg = OrderedDict([('layer1', []), ('layer2', [])]) # 初始化一个有序字典
+        # support_train_outputs_bg = OrderedDict([('layer1', []), ('layer2', [])]) # 初始化一个有序字典
+
+        # query_img: (类别/批次,Batch,3,224,224) support_img_list: (类别/批次,Batch,2,3,224,224)
         # query_img 含义是待检测的图片，support_img_list是支持集
         query_img = query_img.squeeze(0).to(device) # 将query_img从(类别,Batch,3,224,224)转换为(Batch,3,224,224)
         query_feat = STN(query_img) # 将query_img输入到STN中，得到query_feat
-        support_img = support_img_list.squeeze(0).to(device) # 将support_img从(类别,Batch,2,3,224,224)转换为(Batch,2,3,224,224)
+        support_img = support_img_list.squeeze(0).to(device) # 将support_img从(类别/批次,Batch,2,3,224,224)转换为(Batch,2,3,224,224)
         B,K,C,H,W = support_img.shape # B是batch_size，K是支持集的个数，C是通道数，H是高度，W是宽度
 
-        query_train_outputs_fg['layer1'].append(STN.fg1) # 将STN.stn1_output拼接到train_outputs['layer1']中
-        query_train_outputs_fg['layer2'].append(STN.fg2) # 将STN.stn2_output拼接到train_outputs['layer2']中
-        for k, v in query_train_outputs_fg.items():
-            # k is layer name, v is list of tensor
-            query_train_outputs_fg[k] = torch.cat(v, 0) # 将train_outputs[k]拼接起来
+        # query_train_outputs_fg['layer1'].append(STN.fg1) # 将STN.stn1_output拼接到train_outputs['layer1']中
+        # query_train_outputs_fg['layer2'].append(STN.fg2) # 将STN.stn2_output拼接到train_outputs['layer2']中
+        # for k, v in query_train_outputs_fg.items():
+        #     # k is layer name, v is list of tensor
+        #     query_train_outputs_fg[k] = torch.cat(v, 0) # 将train_outputs[k]拼接起来
             
-        query_train_outputs_bg['layer1'].append(STN.bg1) # 将STN.stn1_output拼接到train_outputs['layer1']中
-        query_train_outputs_bg['layer2'].append(STN.bg2) # 将STN.stn2_output拼接到train_outputs['layer2']中
-        for k, v in query_train_outputs_bg.items():
-            # k is layer name, v is list of tensor
-            query_train_outputs_bg[k] = torch.cat(v, 0) # 将train_outputs[k]拼接起来
+        # query_train_outputs_bg['layer1'].append(STN.bg1) # 将STN.stn1_output拼接到train_outputs['layer1']中
+        # query_train_outputs_bg['layer2'].append(STN.bg2) # 将STN.stn2_output拼接到train_outputs['layer2']中
+        # for k, v in query_train_outputs_bg.items():
+        #     # k is layer name, v is list of tensor
+        #     query_train_outputs_bg[k] = torch.cat(v, 0) # 将train_outputs[k]拼接起来
 
         support_img = support_img.view(B * K, C, H, W)
         support_feat = STN(support_img)
@@ -169,28 +168,38 @@ def train(models, epoch, train_loader, optimizers, losses, log):
         z2 = ENC(support_feat) # 将support_feat输入到ENC中，得到z2
         p2 = PRED(z2) # 将z2输入到PRED中，得到p2
         
-        support_train_outputs_fg['layer1'].append(STN.fg1) # 将STN.stn1_output拼接到train_outputs['layer1']中
-        support_train_outputs_fg['layer2'].append(STN.fg2) # 将STN.stn2_output拼接到train_outputs['layer2']中
-        for k, v in support_train_outputs_fg.items():
-            # k is layer name, v is list of tensor
-            support_train_outputs_fg[k] = torch.cat(v, 0) # 将train_outputs[k]拼接起来
+        # p1_channel_mean = p1[:support_feat.size(0),:,:,:].mean(dim=(0,2,3),keepdim=True).cuda(1)
+        # p1_channel_std = p1[:support_feat.size(0),:,:,:].std(dim=(0,2,3),keepdim=True).cuda(1)
+        # p1_normal_t_out = (p1-p1_channel_mean)/p1_channel_std
+        # p2_channel_mean = p2[:support_feat.size(0),:,:,:].mean(dim=(0,2,3),keepdim=True).cuda(1)
+        # p2_channel_std = p2[:support_feat.size(0),:,:,:].std(dim=(0,2,3),keepdim=True).cuda(1)
+        # p2_normal_t_out = (p2-p2_channel_mean)/p2_channel_std
+
+        # support_train_outputs_fg['layer1'].append(STN.fg1) # 将STN.stn1_output拼接到train_outputs['layer1']中
+        # support_train_outputs_fg['layer2'].append(STN.fg2) # 将STN.stn2_output拼接到train_outputs['layer2']中
+        # for k, v in support_train_outputs_fg.items():
+        #     # k is layer name, v is list of tensor
+        #     support_train_outputs_fg[k] = torch.cat(v, 0) # 将train_outputs[k]拼接起来
             
-        support_train_outputs_bg['layer1'].append(STN.bg1) # 将STN.stn1_output拼接到train_outputs['layer1']中
-        support_train_outputs_bg['layer2'].append(STN.bg2) # 将STN.stn2_output拼接到train_outputs['layer2']中
-        for k, v in support_train_outputs_bg.items():
-            # k is layer name, v is list of tensor
-            support_train_outputs_bg[k] = torch.cat(v, 0) # 将train_outputs[k]拼接起来
+        # support_train_outputs_bg['layer1'].append(STN.bg1) # 将STN.stn1_output拼接到train_outputs['layer1']中
+        # support_train_outputs_bg['layer2'].append(STN.bg2) # 将STN.stn2_output拼接到train_outputs['layer2']中
+        # for k, v in support_train_outputs_bg.items():
+        #     # k is layer name, v is list of tensor
+        #     support_train_outputs_bg[k] = torch.cat(v, 0) # 将train_outputs[k]拼接起来
         
-        loss1 = (losses[0](support_train_outputs_fg[0], query_train_outputs_fg[0]) + 
-                 losses[0](support_train_outputs_fg[1], query_train_outputs_fg[1])) / 2 # SimMaxLoss
-        loss2 = (losses[1](support_train_outputs_fg[0], support_train_outputs_bg[0]) +
-                 losses[1](support_train_outputs_fg[1], support_train_outputs_bg[1]) + 
-                 losses[1](query_train_outputs_fg[0], query_train_outputs_bg[0]) + 
-                 losses[1](query_train_outputs_fg[1], query_train_outputs_bg[1])) / 4 # SimMinLoss
-        loss3 = (losses[2](support_train_outputs_bg[0], query_train_outputs_bg[0]) + 
-                 losses[2](support_train_outputs_bg[1], query_train_outputs_bg[1])) / 2 # SimMaxLoss
+        # loss1 = (losses[0](support_train_outputs_fg['layer1'], query_train_outputs_fg['layer1']) + 
+        #          losses[0](support_train_outputs_fg['layer2'], query_train_outputs_fg['layer2'])) / 2 # SimMaxLoss
+        # loss2 = (losses[1](support_train_outputs_fg['layer1'], support_train_outputs_bg['layer1']) +
+        #          losses[1](support_train_outputs_fg['layer2'], support_train_outputs_bg['layer2']) + 
+        #          losses[1](query_train_outputs_fg['layer1'], query_train_outputs_bg['layer1']) + 
+        #          losses[1](query_train_outputs_fg['layer2'], query_train_outputs_bg['layer2'])) / 4 # SimMinLoss
+        # loss3 = (losses[2](support_train_outputs_bg['layer1'], query_train_outputs_bg['layer1']) + 
+        #          losses[2](support_train_outputs_bg['layer2'], query_train_outputs_bg['layer2'])) / 2 # SimMaxLoss
             
-        total_loss = CosLoss(p1,z2, Mean=True)/2 + CosLoss(p2,z1, Mean=True)/2 + loss1 + loss2 + loss3
+        total_loss = CosLoss(p1,z2, Mean=True)/2 + CosLoss(p2,z1, Mean=True)/2
+        # total_loss = CosLoss(p1,z2, Mean=True)/2 + CosLoss(p2,z1, Mean=True)/2 + loss1 + loss2 + loss3 + torch.mean(torch.pow(p1_normal_t_out-p2_normal_t_out,2) + torch.pow(p2-z1,2))
+        # total_loss = CosLoss(p1,z2, Mean=True)/2 + CosLoss(p2,z1, Mean=True)/2 + \
+        #              torch.mean(torch.pow(p1_normal_t_out-p2_normal_t_out,2) + torch.pow(p2-z1,2))
         total_losses.update(total_loss.item(), query_img.size(0)) # 计算平均值 query_img shape (3,224,224) size(0) = 3
         total_loss.backward() # 一个孪生网络，更新参数，防止梯度爆炸
 
