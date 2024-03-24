@@ -11,8 +11,8 @@ from tqdm import tqdm
 from datasets.mvtec import FSAD_Dataset_train, FSAD_Dataset_test
 from utils.utils import time_file_str, time_string, convert_secs2time, AverageMeter, print_log
 from models.siamese import Encoder, Predictor
-from models.stn import stn_net
-from losses import *
+from models.net import STNCvT
+from losses import CosLoss, averCosineSimilatiry
 from utils.funcs import embedding_concat, mahalanobis_torch, rot_img, translation_img, hflip_img, rot90_img, grey_img
 from sklearn.metrics import roc_auc_score
 from scipy.ndimage import gaussian_filter
@@ -80,7 +80,7 @@ def main():
 
     # load model and dataset
     # 加载模型
-    STN = stn_net(args, pretrained=False).to(device)
+    STN = STNCvT(args, pretrained=False).to(device)
     ENC = Encoder().to(device)
     PRED = Predictor().to(device)
 
@@ -177,7 +177,9 @@ def train(models, epoch, train_loader, optimizers, losses, log):
         z2 = ENC(support_feat) # 将support_feat输入到ENC中，得到z2
         p2 = PRED(z2) # 将z2输入到PRED中，得到p2
             
-        total_loss = CosLoss(p1,z2, Mean=True)/2 + CosLoss(p2,z1, Mean=True)/2
+        # total_loss = CosLoss(p1,z2, Mean=True)/2 + CosLoss(p2,z1, Mean=True)/2
+        total_loss = averCosineSimilatiry(p1,z2, Mean=True)/2 + averCosineSimilatiry(p2,z1, Mean=True)/2
+
         total_losses.update(total_loss.item(), query_img.size(0)) # 计算平均值 query_img shape (3,224,224) size(0) = 3
         total_loss.backward() # 一个孪生网络，更新参数，防止梯度爆炸
 

@@ -29,47 +29,43 @@ N_PARAMS = {'affine': 6, # 仿射变换矩阵 2*3
             'rotation_translation': 3, # 旋转+平移 
             'rotation_translation_scale': 5} # 旋转+平移+缩放
 
+def conv1x1(in_planes: int, out_planes: int, stride: int = 1) -> nn.Conv2d:
+    """1x1 convolution"""
+    return nn.Conv2d(in_planes, out_planes, 
+                     kernel_size=1, stride=stride, 
+                     bias=False)
 
 def conv3x3(in_planes: int, out_planes: int, stride: int = 1, groups: int = 1, dilation: int = 1) -> nn.Conv2d:
     """3x3 convolution with padding"""
     return nn.Conv2d(
-        in_planes,
-        out_planes,
-        kernel_size=3,
-        stride=stride, # 1
-        padding=dilation, # 1
+        in_planes, out_planes,
+        kernel_size=3, stride=stride, # 1
+        padding=dilation, dilation=dilation, # 1 padding 
         groups=groups, # 1
-        bias=False, 
-        dilation=dilation, # 1
+        bias=False, # False
     ) # (N-3+1*2)*1+1 = N
 
-
-def conv1x1(in_planes: int, out_planes: int, stride: int = 1) -> nn.Conv2d:
-    """1x1 convolution"""
-    return nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=stride, bias=False)
-    
-    
 class STNModule(nn.Module):
-    def __init__(self, in_num, block_index, args):
+    def __init__(self, args, in_num, feat_size):
         super(STNModule, self).__init__()
         # 针对于变换矩阵
         if args.mode == 'train':
             self.model_mode = 'train'
         else:
             self.model_mode = 'test'
-        self.feat_size = 128 // (4 * block_index) # 56(第一层输入) // (4 * block_index)  32/4
+        self.feat_size = feat_size # 输入 96=>96/2/2 = 24
         self.stn_mode = args.stn_mode
         self.stn_n_params = N_PARAMS[self.stn_mode]
         self.fn = nn.Sequential(
             # SPPF(128, self.feat_out), # shape 不变 （自己添加的）
-            conv3x3(in_planes=in_num, out_planes=64), # 128
+            conv3x3(in_planes=in_num, out_planes=64), # 128 96
             nn.BatchNorm2d(64),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=3, stride=2, padding=1), # 128-3+2 / 2 + 1 = 64   
+            nn.MaxPool2d(kernel_size=3, stride=2, padding=1), # 128-3+2 / 2 + 1 = 64  48 
             conv3x3(in_planes=64, out_planes=16), # 64
             nn.BatchNorm2d(16),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=3, stride=2, padding=1), # 32   16   8
+            nn.MaxPool2d(kernel_size=3, stride=2, padding=1), # 32   16   8   24
         )
         self.fc = nn.Sequential(
             # (6, 16, 8, 8)
@@ -172,6 +168,19 @@ class STNModule(nn.Module):
         img_transform = F.grid_sample(x, grid, padding_mode="reflection") # 插值在x上
 
         return img_transform, theta1
+
+
+def stn_net(args, pretrained=True):
+    """Constructs a ResNet-18 model.
+    Args:
+        pretrained (bool): If True, returns a model pre-trained on ImageNet
+    """
+    from resnet import WideResNet_STN   
+    model = WideResNet_STN(args, pretrained=True)
+    if pretrained:
+        model.load_state_dict(model_zoo.load_url(model_urls['resnet18']), strict=False)
+    return model
+
 
 class BasicBlock(nn.Module):
     expansion: int = 1
@@ -300,15 +309,3 @@ class ResNet(nn.Module):
         # after layer3 shape:  torch.Size([32, 256, 14, 14])
 
         return out
-
-def stn_net(args, pretrained=True, **kwargs):
-    """Constructs a ResNet-18 model.
-    Args:
-        pretrained (bool): If True, returns a model pre-trained on ImageNet
-    """
-    model = ResNet(args, BasicBlock, [2, 2, 2, 2], **kwargs)
-
-    if pretrained:
-        model.load_state_dict(model_zoo.load_url(model_urls['resnet18']), strict=False)
-    return model
-
