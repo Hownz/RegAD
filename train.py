@@ -24,18 +24,37 @@ device = torch.device('cuda:1' if use_cuda else 'cpu')
 
 def main():
     parser = argparse.ArgumentParser(description='Registration based Few-Shot Anomaly Detection')
-    parser.add_argument('--obj', type=str, default='PCB2')
-    parser.add_argument('--data_path', type=str, default='./PCB')
-    parser.add_argument('--epochs', type=int, default=50, help='maximum training epochs')
-    parser.add_argument('--batch_size', type=int, default=1)
-    parser.add_argument('--img_size', type=int, default=960)
-    parser.add_argument('--lr', type=float, default=0.0001, help='learning rate of others in SGD')
-    parser.add_argument('--momentum', type=float, default=0.9, help='momentum of SGD')
-    parser.add_argument('--seed', type=int, default=668, help='manual seed')
-    parser.add_argument('--shot', type=int, default=1, help='shot count')
-    parser.add_argument('--inferences', type=int, default=10, help='number of rounds per inference')
-    parser.add_argument('--stn_mode', type=str, default='rotation_scale',
-                        help='[affine, translation, rotation, scale, shear, rotation_scale, translation_scale, rotation_translation, rotation_translation_scale]')
+    parser.add_argument('--mode', type=str, 
+                                  default='train')
+    parser.add_argument('--obj', type=str, 
+                                 default='PCB2')
+    parser.add_argument('--data_path', type=str, 
+                                       default='./PCB')
+    parser.add_argument('--epochs', type=int, 
+                                    default=100, # 600 
+                                    help='maximum training epochs')
+    parser.add_argument('--batch_size', type=int, 
+                                        default=6) # 分批
+    parser.add_argument('--img_size', type=int, 
+                                      default=512)
+    parser.add_argument('--lr', type=float, 
+                                default=0.0001, 
+                                help='learning rate of others in SGD')
+    parser.add_argument('--momentum', type=float, 
+                                      default=0.9, 
+                                      help='momentum of SGD')
+    parser.add_argument('--seed', type=int, 
+                                  default=668, 
+                                  help='manual seed')
+    parser.add_argument('--shot', type=int, 
+                                  default=2, 
+                                  help='shot count')
+    parser.add_argument('--inferences', type=int, 
+                                        default=10, 
+                                        help='number of rounds per inference')
+    parser.add_argument('--stn_mode', type=str, 
+                                      default='rotation_scale',
+                                      help='[affine, translation, rotation, scale, shear, rotation_scale, translation_scale, rotation_translation, rotation_translation_scale]')
     args = parser.parse_args()
     args.input_channel = 3
 
@@ -61,13 +80,20 @@ def main():
 
     # load model and dataset
     # 加载模型
-    STN = stn_net(pretrained=False).to(device)
+    STN = stn_net(args, pretrained=False).to(device)
     ENC = Encoder().to(device)
     PRED = Predictor().to(device)
 
-    STN.load_state_dict(torch.load('logs_pcb/rotation_scale/1/PCB2/PCB2_1_rotation_scale_model.pt')['STN'], strict=False) # strict=False 时，意味着加载过程中可以忽略一些不匹配的键（keys）和形状（shapes）
-    ENC.load_state_dict(torch.load('logs_pcb/rotation_scale/1/PCB2/PCB2_1_rotation_scale_model.pt')['ENC'], strict=False) 
-    PRED.load_state_dict(torch.load('logs_pcb/rotation_scale/1/PCB2/PCB2_1_rotation_scale_model.pt')['PRED'], strict=False) 
+    # 第一种
+    CKPT_name = f'logs_pcb/rotation_scale/{args.shot}/{args.obj}/{args.obj}_{args.shot}_rotation_scale_model.pt'
+    model_CKPT = torch.load(CKPT_name)
+    STN.load_state_dict(model_CKPT['STN'])
+    ENC.load_state_dict(model_CKPT['ENC'])
+    PRED.load_state_dict(model_CKPT['PRED'])
+    # 第二种
+    # STN.load_state_dict(torch.load('logs_pcb/rotation_scale/1/PCB2/PCB2_1_rotation_scale_model.pt')['STN'], strict=False) # strict=False 时，意味着加载过程中可以忽略一些不匹配的键（keys）和形状（shapes）
+    # ENC.load_state_dict(torch.load('logs_pcb/rotation_scale/1/PCB2/PCB2_1_rotation_scale_model.pt')['ENC'], strict=False) 
+    # PRED.load_state_dict(torch.load('logs_pcb/rotation_scale/1/PCB2/PCB2_1_rotation_scale_model.pt')['PRED'], strict=False) 
 
     print(STN)
 
@@ -86,7 +112,7 @@ def main():
     print('Loading Datasets')
     kwargs = {'num_workers': 4, 'pin_memory': True} if use_cuda else {}
     train_dataset = FSAD_Dataset_train(args.data_path, class_name=args.obj, is_train=True, resize=args.img_size, shot=args.shot, batch=args.batch_size)
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=1, shuffle=True, **kwargs)
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=1, shuffle=True, **kwargs) # 加载一批，因为dataset已经加载好了
     # test_dataset = FSAD_Dataset_test(args.data_path, class_name=args.obj, is_train=False, resize=args.img_size, shot=args.shot)
     # test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False, **kwargs)
 
@@ -130,29 +156,12 @@ def train(models, epoch, train_loader, optimizers, losses, log):
         ENC_optimizer.zero_grad()
         PRED_optimizer.zero_grad()
 
-        # query_train_outputs_fg = OrderedDict([('layer1', []), ('layer2', [])]) # 初始化一个有序字典
-        # query_train_outputs_bg = OrderedDict([('layer1', []), ('layer2', [])]) # 初始化一个有序字典
-        # support_train_outputs_fg = OrderedDict([('layer1', []), ('layer2', [])]) # 初始化一个有序字典
-        # support_train_outputs_bg = OrderedDict([('layer1', []), ('layer2', [])]) # 初始化一个有序字典
-
         # query_img: (类别/批次,Batch,3,224,224) support_img_list: (类别/批次,Batch,2,3,224,224)
         # query_img 含义是待检测的图片，support_img_list是支持集
         query_img = query_img.squeeze(0).to(device) # 将query_img从(类别,Batch,3,224,224)转换为(Batch,3,224,224)
         query_feat = STN(query_img) # 将query_img输入到STN中，得到query_feat
         support_img = support_img_list.squeeze(0).to(device) # 将support_img从(类别/批次,Batch,2,3,224,224)转换为(Batch,2,3,224,224)
         B,K,C,H,W = support_img.shape # B是batch_size，K是支持集的个数，C是通道数，H是高度，W是宽度
-
-        # query_train_outputs_fg['layer1'].append(STN.fg1) # 将STN.stn1_output拼接到train_outputs['layer1']中
-        # query_train_outputs_fg['layer2'].append(STN.fg2) # 将STN.stn2_output拼接到train_outputs['layer2']中
-        # for k, v in query_train_outputs_fg.items():
-        #     # k is layer name, v is list of tensor
-        #     query_train_outputs_fg[k] = torch.cat(v, 0) # 将train_outputs[k]拼接起来
-            
-        # query_train_outputs_bg['layer1'].append(STN.bg1) # 将STN.stn1_output拼接到train_outputs['layer1']中
-        # query_train_outputs_bg['layer2'].append(STN.bg2) # 将STN.stn2_output拼接到train_outputs['layer2']中
-        # for k, v in query_train_outputs_bg.items():
-        #     # k is layer name, v is list of tensor
-        #     query_train_outputs_bg[k] = torch.cat(v, 0) # 将train_outputs[k]拼接起来
 
         support_img = support_img.view(B * K, C, H, W)
         support_feat = STN(support_img)
@@ -167,39 +176,8 @@ def train(models, epoch, train_loader, optimizers, losses, log):
         
         z2 = ENC(support_feat) # 将support_feat输入到ENC中，得到z2
         p2 = PRED(z2) # 将z2输入到PRED中，得到p2
-        
-        # p1_channel_mean = p1[:support_feat.size(0),:,:,:].mean(dim=(0,2,3),keepdim=True).cuda(1)
-        # p1_channel_std = p1[:support_feat.size(0),:,:,:].std(dim=(0,2,3),keepdim=True).cuda(1)
-        # p1_normal_t_out = (p1-p1_channel_mean)/p1_channel_std
-        # p2_channel_mean = p2[:support_feat.size(0),:,:,:].mean(dim=(0,2,3),keepdim=True).cuda(1)
-        # p2_channel_std = p2[:support_feat.size(0),:,:,:].std(dim=(0,2,3),keepdim=True).cuda(1)
-        # p2_normal_t_out = (p2-p2_channel_mean)/p2_channel_std
-
-        # support_train_outputs_fg['layer1'].append(STN.fg1) # 将STN.stn1_output拼接到train_outputs['layer1']中
-        # support_train_outputs_fg['layer2'].append(STN.fg2) # 将STN.stn2_output拼接到train_outputs['layer2']中
-        # for k, v in support_train_outputs_fg.items():
-        #     # k is layer name, v is list of tensor
-        #     support_train_outputs_fg[k] = torch.cat(v, 0) # 将train_outputs[k]拼接起来
-            
-        # support_train_outputs_bg['layer1'].append(STN.bg1) # 将STN.stn1_output拼接到train_outputs['layer1']中
-        # support_train_outputs_bg['layer2'].append(STN.bg2) # 将STN.stn2_output拼接到train_outputs['layer2']中
-        # for k, v in support_train_outputs_bg.items():
-        #     # k is layer name, v is list of tensor
-        #     support_train_outputs_bg[k] = torch.cat(v, 0) # 将train_outputs[k]拼接起来
-        
-        # loss1 = (losses[0](support_train_outputs_fg['layer1'], query_train_outputs_fg['layer1']) + 
-        #          losses[0](support_train_outputs_fg['layer2'], query_train_outputs_fg['layer2'])) / 2 # SimMaxLoss
-        # loss2 = (losses[1](support_train_outputs_fg['layer1'], support_train_outputs_bg['layer1']) +
-        #          losses[1](support_train_outputs_fg['layer2'], support_train_outputs_bg['layer2']) + 
-        #          losses[1](query_train_outputs_fg['layer1'], query_train_outputs_bg['layer1']) + 
-        #          losses[1](query_train_outputs_fg['layer2'], query_train_outputs_bg['layer2'])) / 4 # SimMinLoss
-        # loss3 = (losses[2](support_train_outputs_bg['layer1'], query_train_outputs_bg['layer1']) + 
-        #          losses[2](support_train_outputs_bg['layer2'], query_train_outputs_bg['layer2'])) / 2 # SimMaxLoss
             
         total_loss = CosLoss(p1,z2, Mean=True)/2 + CosLoss(p2,z1, Mean=True)/2
-        # total_loss = CosLoss(p1,z2, Mean=True)/2 + CosLoss(p2,z1, Mean=True)/2 + loss1 + loss2 + loss3 + torch.mean(torch.pow(p1_normal_t_out-p2_normal_t_out,2) + torch.pow(p2-z1,2))
-        # total_loss = CosLoss(p1,z2, Mean=True)/2 + CosLoss(p2,z1, Mean=True)/2 + \
-        #              torch.mean(torch.pow(p1_normal_t_out-p2_normal_t_out,2) + torch.pow(p2-z1,2))
         total_losses.update(total_loss.item(), query_img.size(0)) # 计算平均值 query_img shape (3,224,224) size(0) = 3
         total_loss.backward() # 一个孪生网络，更新参数，防止梯度爆炸
 
@@ -208,133 +186,6 @@ def train(models, epoch, train_loader, optimizers, losses, log):
         PRED_optimizer.step()
 
     print_log(('Train Epoch: {} Total_Loss: {:.6f}'.format(epoch, total_losses.avg)), log)
-
-
-def test(models, cur_epoch, fixed_fewshot_list, test_loader, **kwargs):
-    STN = models[0]
-    ENC = models[1]
-    PRED = models[2]
-
-    STN.eval()
-    ENC.eval()
-    PRED.eval()
-
-    train_outputs = OrderedDict([('layer1', []), ('layer2', []), ('layer3', [])]) # 初始化一个有序字典
-    test_outputs = OrderedDict([('layer1', []), ('layer2', []), ('layer3', [])]) # 初始化一个有序字典
-
-    support_img = fixed_fewshot_list[cur_epoch] # fixed_fewshot_list[cur_epoch] 是一个列表，里面包含了5个支持集 
-    augment_support_img = support_img
-    # rotate img with small angle
-    for angle in [-np.pi / 4, -3 * np.pi / 16, -np.pi / 8, -np.pi / 16, np.pi / 16, np.pi / 8, 3 * np.pi / 16,
-                  np.pi / 4]:
-        rotate_img = rot_img(support_img, angle)
-        augment_support_img = torch.cat([augment_support_img, rotate_img], dim=0) # 将rotate_img拼接到augment_support_img中
-    # translate img
-    for a, b in [(0.2, 0.2), (-0.2, 0.2), (-0.2, -0.2), (0.2, -0.2), (0.1, 0.1), (-0.1, 0.1), (-0.1, -0.1),
-                 (0.1, -0.1)]:
-        trans_img = translation_img(support_img, a, b)
-        augment_support_img = torch.cat([augment_support_img, trans_img], dim=0) # 将trans_img拼接到augment_support_img中
-    # hflip img
-    flipped_img = hflip_img(support_img) # 将support_img水平翻转
-    augment_support_img = torch.cat([augment_support_img, flipped_img], dim=0)
-    # rgb to grey img
-    greyed_img = grey_img(support_img)
-    augment_support_img = torch.cat([augment_support_img, greyed_img], dim=0)
-    # rotate img in 90 degree
-    for angle in [1, 2, 3]:
-        rotate90_img = rot90_img(support_img, angle)
-        augment_support_img = torch.cat([augment_support_img, rotate90_img], dim=0)
-    augment_support_img = augment_support_img[torch.randperm(augment_support_img.size(0))] # 将augment_support_img打乱
-
-    # torch version    
-    with torch.no_grad():
-        support_feat = STN(augment_support_img.to(device)) # 将augment_support_img输入到STN中，得到support_feat
-    support_feat = torch.mean(support_feat, dim=0, keepdim=True)
-    train_outputs['layer1'].append(STN.stn1_output) # 将STN.stn1_output拼接到train_outputs['layer1']中
-    train_outputs['layer2'].append(STN.stn2_output) # 将STN.stn2_output拼接到train_outputs['layer2']中
-    train_outputs['layer3'].append(STN.stn3_output) # 将STN.stn3_output拼接到train_outputs['layer3']中
-
-    for k, v in train_outputs.items():
-        # k is layer name, v is list of tensor
-        train_outputs[k] = torch.cat(v, 0) # 将train_outputs[k]拼接起来
-
-    # Embedding concat
-    embedding_vectors = train_outputs['layer1']
-    for layer_name in ['layer2', 'layer3']:
-        embedding_vectors = embedding_concat(embedding_vectors, train_outputs[layer_name], True) # 将train_outputs[layer_name]拼接到embedding_vectors中
-
-    # calculate multivariate Gaussian distribution 高斯分布
-    B, C, H, W = embedding_vectors.size()
-    embedding_vectors = embedding_vectors.view(B, C, H * W)
-    mean = torch.mean(embedding_vectors, dim=0)
-    cov = torch.zeros(C, C, H * W).to(device)
-    I = torch.eye(C).to(device) # 创建单位矩阵
-    for i in range(H * W):
-        cov[:, :, i] = torch.cov(embedding_vectors[:, :, i].T) + 0.01 * I # 计算协方差矩阵
-    train_outputs = [mean, cov]
-
-    # torch version
-    query_imgs = []
-    gt_list = []
-    mask_list = []
-    score_map_list = []
-
-    for (query_img, _, mask, y) in test_loader:
-        query_imgs.extend(query_img.cpu().detach().numpy())
-        gt_list.extend(y.cpu().detach().numpy())
-        mask_list.extend(mask.cpu().detach().numpy())
-
-        # model prediction
-        query_feat = STN(query_img.to(device))
-        z1 = ENC(query_feat)
-        p1 = PRED(z1)
-        
-        z2 = ENC(support_feat)
-        p2 = PRED(z2)
-
-        loss = CosLoss(p1, z2, Mean=False) / 2 + CosLoss(p2, z1, Mean=False) / 2
-        loss_reshape = F.interpolate(loss.unsqueeze(1), size=query_img.size(2), mode='bilinear',
-                                     align_corners=False).squeeze(0)
-        score_map_list.append(loss_reshape.cpu().detach().numpy())
-
-        test_outputs['layer1'].append(STN.stn1_output)
-        test_outputs['layer2'].append(STN.stn2_output)
-        test_outputs['layer3'].append(STN.stn3_output)
-
-    for k, v in test_outputs.items():
-        # k is layer name, v is list of tensor
-        test_outputs[k] = torch.cat(v, 0)
-
-    # Embedding concat
-    embedding_vectors = test_outputs['layer1']
-    for layer_name in ['layer2', 'layer3']:
-        embedding_vectors = embedding_concat(embedding_vectors, test_outputs[layer_name], True)
-
-    # calculate distance matrix
-    B, C, H, W = embedding_vectors.size()
-    embedding_vectors = embedding_vectors.view(B, C, H * W)
-    dist_list = []
-
-    for i in range(H * W):
-        mean = train_outputs[0][:, i]
-        conv_inv = torch.linalg.inv(train_outputs[1][:, :, i]) # 计算逆矩阵
-        # train_outputs[1][:, :, i]：这是一个张量切片操作，用于获取 train_outputs 中第二个元素的第 i 列。
-        #   这个操作可能得到一个方阵，因为我们想要计算它的逆矩阵。
-        # torch.linalg.inv(train_outputs[1][:, :, i])：这是一个调用 torch.linalg.inv 函数的操作，它会计算传入张量的逆矩阵。
-        dist = [mahalanobis_torch(sample[:, i], mean, conv_inv) for sample in embedding_vectors] # 计算马氏距离
-        dist_list.append(dist)
-
-    dist_list = torch.tensor(dist_list).transpose(1, 0).reshape(B, H, W)
-
-    # upsample
-    score_map = F.interpolate(dist_list.unsqueeze(1), size=query_img.size(2), mode='bilinear',
-                              align_corners=False).squeeze().numpy()
-
-    # apply gaussian smoothing on the score map
-    for i in range(score_map.shape[0]):
-        score_map[i] = gaussian_filter(score_map[i], sigma=4)
-
-    return score_map, query_imgs, gt_list, mask_list
 
 def adjust_learning_rate(optimizers, init_lrs, epoch, args):
     """Decay the learning rate based on schedule"""

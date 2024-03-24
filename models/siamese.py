@@ -25,7 +25,7 @@ def conv1x1(in_planes: int, out_planes: int, stride: int = 1) -> nn.Conv2d:
 
 
 class Encoder(nn.Module):
-    def __init__(self, planes=384):
+    def __init__(self, planes=256):
         super(Encoder, self).__init__()
         self.conv1 = conv1x1(in_planes=planes, out_planes=planes)
         self.bn1 = nn.BatchNorm2d(planes)
@@ -57,7 +57,7 @@ class Encoder(nn.Module):
 
 
 class Predictor(nn.Module):
-    def __init__(self, planes=384):
+    def __init__(self, planes=256):
         super(Predictor, self).__init__()
         self.conv1 = conv1x1(in_planes=planes, out_planes=planes)
         self.bn1 = nn.BatchNorm2d(planes)

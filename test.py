@@ -19,25 +19,28 @@ from collections import OrderedDict
 import warnings
 warnings.filterwarnings("ignore")
 use_cuda = torch.cuda.is_available()
-device = torch.device('cuda' if use_cuda else 'cpu')
+device = torch.device('cpu')
+# device = torch.device('cuda:1' if use_cuda else 'cpu')
 
 def main():
     parser = argparse.ArgumentParser(description='RegAD on MVtec')
-    parser.add_argument('--obj', type=str, default='hazelnut')
-    parser.add_argument('--data_type', type=str, default='mvtec')
-    parser.add_argument('--data_path', type=str, default='./MVTec/')
+    parser.add_argument('--mode', type=str, default='test')
+    parser.add_argument('--obj', type=str, default='PCB4') # PCB2
+    parser.add_argument('--data_path', type=str, default='./PCB/')
     parser.add_argument('--epochs', type=int, default=50, help='maximum training epochs')
-    parser.add_argument('--batch_size', type=int, default=32)
-    parser.add_argument('--img_size', type=int, default=224)
+    parser.add_argument('--batch_size', type=int, default=1) # 分批
+    parser.add_argument('--img_size', type=int, default=512)
     parser.add_argument('--lr', type=float, default=0.01, help='learning rate in SGD')
     parser.add_argument('--momentum', type=float, default=0.9, help='momentum of SGD')
     parser.add_argument('--seed', type=int, default=668, help='manual seed')
     parser.add_argument('--shot', type=int, default=2, help='shot count')
-    parser.add_argument('--inferences', type=int, default=10, help='number of rounds per inference')
-    parser.add_argument('--stn_mode', type=str, default='rotation_scale', help='[affine, translation, rotation, scale, shear, rotation_scale, translation_scale, rotation_translation, rotation_translation_scale]')
+    parser.add_argument('--inferences', type=int, default=5, help='number of rounds per inference')
+    parser.add_argument('--stn_mode', type=str, 
+                                      default='rotation_scale', 
+                                      help='[affine, translation, rotation, scale, shear, rotation_scale, translation_scale, rotation_translation, rotation_translation_scale]')
     args = parser.parse_args()
-
     args.input_channel = 3
+
     if args.seed is None:
         args.seed = random.randint(1, 10000)
         random.seed(args.seed)
@@ -51,7 +54,7 @@ def main():
     PRED = Predictor().to(device)
 
     # load models
-    CKPT_name = f'./save_checkpoints/rotation_scale/{args.shot}/{args.obj}/{args.obj}_{args.shot}_rotation_scale_model.pt'
+    CKPT_name = f'logs_pcb/rotation_scale/2/PCB2/PCB2_2_rotation_scale_model.pt'
     model_CKPT = torch.load(CKPT_name)
     STN.load_state_dict(model_CKPT['STN'])
     ENC.load_state_dict(model_CKPT['ENC'])
@@ -64,7 +67,7 @@ def main():
     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False, **kwargs)
 
     print('Loading Fixed Support Set')
-    fixed_fewshot_list = torch.load(f'./support_set/{args.obj}/{args.shot}_{args.inferences}.pt')
+    fixed_fewshot_list = torch.load(f'./support_set_pcb/{args.obj}/{args.shot}_{args.inferences}.pt')
 
     print('Start Testing:')
     image_auc_list = []
@@ -109,8 +112,10 @@ def test(args, models, cur_epoch, fixed_fewshot_list, test_loader, **kwargs):
     train_outputs = OrderedDict([('layer1', []), ('layer2', []), ('layer3', [])])
     test_outputs = OrderedDict([('layer1', []), ('layer2', []), ('layer3', [])])
 
-    support_img = fixed_fewshot_list[cur_epoch]
+    # support_img = fixed_fewshot_list[cur_epoch]
+    support_img = fixed_fewshot_list
     augment_support_img = support_img
+    # augment_support_img = support_img
     # rotate img with small angle
     for angle in [-np.pi/4, -3 * np.pi/16, -np.pi/8, -np.pi/16, np.pi/16, np.pi/8, 3 * np.pi/16, np.pi/4]:
         rotate_img = rot_img(support_img, angle)
@@ -135,6 +140,7 @@ def test(args, models, cur_epoch, fixed_fewshot_list, test_loader, **kwargs):
     with torch.no_grad():
         support_feat = STN(augment_support_img.to(device))
     support_feat = torch.mean(support_feat, dim=0, keepdim=True)
+    # cpu
     train_outputs['layer1'].append(STN.stn1_output)
     train_outputs['layer2'].append(STN.stn2_output)
     train_outputs['layer3'].append(STN.stn3_output)
@@ -145,14 +151,14 @@ def test(args, models, cur_epoch, fixed_fewshot_list, test_loader, **kwargs):
     # Embedding concat
     embedding_vectors = train_outputs['layer1']
     for layer_name in ['layer2', 'layer3']:
-        embedding_vectors = embedding_concat(embedding_vectors, train_outputs[layer_name], True)
+        embedding_vectors = embedding_concat(embedding_vectors, train_outputs[layer_name], False) # 不用gpu
 
     # calculate multivariate Gaussian distribution
     B, C, H, W = embedding_vectors.size()
     embedding_vectors = embedding_vectors.view(B, C, H * W)
     mean = torch.mean(embedding_vectors, dim=0)
-    cov = torch.zeros(C, C, H * W).to(device)
-    I = torch.eye(C).to(device)
+    cov = torch.zeros(C, C, H * W).to('cpu')
+    I = torch.eye(C).to('cpu')
     for i in range(H * W):
         cov[:, :, i] = torch.cov(embedding_vectors[:, :, i].T) + 0.01 * I
     train_outputs = [mean, cov]
@@ -189,7 +195,7 @@ def test(args, models, cur_epoch, fixed_fewshot_list, test_loader, **kwargs):
     # Embedding concat
     embedding_vectors = test_outputs['layer1']
     for layer_name in ['layer2', 'layer3']:
-        embedding_vectors = embedding_concat(embedding_vectors, test_outputs[layer_name], True)
+        embedding_vectors = embedding_concat(embedding_vectors, test_outputs[layer_name], False)
 
     # calculate distance matrix
     B, C, H, W = embedding_vectors.size()

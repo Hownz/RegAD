@@ -4,10 +4,9 @@ from utils.utils import print_log
 import torch.nn.functional as F
 import kornia as K
 
-
 def embedding_concat(x, y, use_cuda):
     # from https://github.com/xiahaifeng1995/PaDiM-Anomaly-Detection-Localization-master
-    device = torch.device('cuda' if use_cuda else 'cpu')
+    device = torch.device('cuda:1' if use_cuda else 'cpu')
     B, C1, H1, W1 = x.size()
     _, C2, H2, W2 = y.size()
     s = int(H1 / H2) # 这里计算了一个步长 s，用于将 x 沿着高度方向划分成与 y 相同高度的块。

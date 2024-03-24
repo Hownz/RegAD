@@ -24,19 +24,37 @@ device = torch.device('cuda' if use_cuda else 'cpu')
 
 def main():
     parser = argparse.ArgumentParser(description='Registration based Few-Shot Anomaly Detection')
-    parser.add_argument('--obj', type=str, default='bottle')
-    parser.add_argument('--data_type', type=str, default='mvtec')
-    parser.add_argument('--data_path', type=str, default='./MVTec/')
-    parser.add_argument('--epochs', type=int, default=50, help='maximum training epochs')
-    parser.add_argument('--batch_size', type=int, default=32)
-    parser.add_argument('--img_size', type=int, default=224)
-    parser.add_argument('--lr', type=float, default=0.0001, help='learning rate of others in SGD')
-    parser.add_argument('--momentum', type=float, default=0.9, help='momentum of SGD')
-    parser.add_argument('--seed', type=int, default=668, help='manual seed')
-    parser.add_argument('--shot', type=int, default=2, help='shot count')
-    parser.add_argument('--inferences', type=int, default=10, help='number of rounds per inference')
-    parser.add_argument('--stn_mode', type=str, default='rotation_scale',
-                        help='[affine, translation, rotation, scale, shear, rotation_scale, translation_scale, rotation_translation, rotation_translation_scale]')
+    parser.add_argument('--obj', type=str, 
+                                 default='bottle')
+    parser.add_argument('--data_type', type=str, 
+                                       default='mvtec')
+    parser.add_argument('--data_path', type=str, 
+                                       default='./MVTec/')
+    parser.add_argument('--epochs', type=int, 
+                                    default=50, 
+                                    help='maximum training epochs')
+    parser.add_argument('--batch_size', type=int, 
+                                        default=32)
+    parser.add_argument('--img_size', type=int, 
+                                      default=224)
+    parser.add_argument('--lr', type=float, 
+                                default=0.0001, 
+                                help='learning rate of others in SGD')
+    parser.add_argument('--momentum', type=float, 
+                                      default=0.9, 
+                                      help='momentum of SGD')
+    parser.add_argument('--seed', type=int, 
+                                  default=668, 
+                                  help='manual seed')
+    parser.add_argument('--shot', type=int, 
+                                  default=2, 
+                                  help='shot count')
+    parser.add_argument('--inferences', type=int, 
+                                        default=10, 
+                                        help='number of rounds per inference')
+    parser.add_argument('--stn_mode', type=str, 
+                                      default='rotation_scale',
+                                      help='[affine, translation, rotation, scale, shear, rotation_scale, translation_scale, rotation_translation, rotation_translation_scale]')
     args = parser.parse_args()
     args.input_channel = 3
 

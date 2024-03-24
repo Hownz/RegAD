@@ -62,7 +62,7 @@ class FSAD_Dataset_support(Dataset):
             for k in range(self.shot):
                 image = Image.open(support_list[i][k]).convert('RGB')
                 image = self.transform_x(image)
-                # image = self.choose_random_aug_image(image) # 增强处理
+                image = self.choose_random_aug_image(image) # 增强处理
                 image = image.unsqueeze(dim=0) # image_shape torch.Size([k, 3, 224, 224])
                 if support_sub_img is None:
                     support_sub_img = image
@@ -368,7 +368,7 @@ class FSAD_Dataset_test(Dataset):
                 support_dir_one = []
                 query_dir.append(image_dir_one)
                 query_mask_dir = image_dir_one.replace('test', 'ground_truth')
-                query_mask_dir = query_mask_dir[:-4] + '_mask.png'
+                query_mask_dir = query_mask_dir[:-4] + '.png'
                 query_mask.append(query_mask_dir)
                 for k in range(self.shot):
                     random_choose = random.randint(0, (len(data_train) - 1))

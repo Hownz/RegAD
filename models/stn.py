@@ -50,90 +50,35 @@ def conv1x1(in_planes: int, out_planes: int, stride: int = 1) -> nn.Conv2d:
     
     
 class STNModule(nn.Module):
-    # def __init__(self, in_num, block_index, args):
-    #     super(STNModule, self).__init__()
-    #     self.feat_size = 56 // (4 * block_index)
-    #     self.stn_mode = args.stn_mode
-    #     self.stn_n_params = N_PARAMS[self.stn_mode]
-    #     self.conv = nn.Sequential(
-    #         conv3x3(in_planes=in_num, out_planes=64),
-    #         nn.BatchNorm2d(64),
-    #         nn.ReLU(),
-    #         nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
-    #         conv3x3(in_planes=64, out_planes=16),
-    #         nn.BatchNorm2d(16),
-    #         nn.ReLU(),
-    #         nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
-    #     )
-    #     self.fc = nn.Sequential(
-    #         nn.Linear(in_features=16 * self.feat_size * self.feat_size, out_features=1024),
-    #         nn.ReLU(True),
-    #         nn.Linear(in_features=1024, out_features=self.stn_n_params),
-    #     )
-    #     self.fc[2].weight.data.fill_(0)
-    #     self.fc[2].weight.data.zero_()
-    #     if self.stn_mode == 'affine':
-    #         self.fc[2].bias.data.copy_(torch.tensor([1, 0, 0, 0, 1, 0], dtype=torch.float))
-    #     elif self.stn_mode in ['translation', 'shear']:
-    #         self.fc[2].bias.data.copy_(torch.tensor([0, 0], dtype=torch.float))
-    #     elif self.stn_mode == 'scale':
-    #         self.fc[2].bias.data.copy_(torch.tensor([1, 1], dtype=torch.float))
-    #     elif self.stn_mode == 'rotation':
-    #         self.fc[2].bias.data.copy_(torch.tensor([0], dtype=torch.float))
-    #     elif self.stn_mode == 'rotation_scale':
-    #         self.fc[2].bias.data.copy_(torch.tensor([0, 1, 1], dtype=torch.float))
-    #     elif self.stn_mode == 'translation_scale':
-    #         self.fc[2].bias.data.copy_(torch.tensor([0, 0, 1, 1], dtype=torch.float))
-    #     elif self.stn_mode == 'rotation_translation':
-    #         self.fc[2].bias.data.copy_(torch.tensor([0, 0, 0], dtype=torch.float))
-    #     elif self.stn_mode == 'rotation_translation_scale':
-    #         self.fc[2].bias.data.copy_(torch.tensor([0, 0, 0, 1, 1], dtype=torch.float))
-            
-    def __init__(self, feat_in, feat_out=1, feat_size=44, stn_mode='translation_scale'):
+    def __init__(self, in_num, block_index, args):
         super(STNModule, self).__init__()
-        # 旧输入 [Batch, 64, 56, 56] [Batch, 128, 28, 28] [Batch, 256, 14, 14]
-        # 新输入 [Batch, 512, 243, 243] [Batch, 128, 122, 122] [Batch, 1, 61, 61]
-        # 新输入 [Batch, 512, 240, 240] [Batch, 128, 120, 120] [Batch, 1, 60, 60]
-        # 新输入 [Batch, 512, 228, 228] [Batch, 128, 114, 114] [Batch, 1, 57, 57]
-        # 新输入 [Batch, 512, 173, 173] [Batch, 128, 87, 87] [Batch, 1, 44, 44]
-        self.feat_in = feat_in
-        self.feat_out = feat_out
-        self.feat_size = feat_size 
-        self.stn_mode = stn_mode
-        self.stn_n_params = N_PARAMS[self.stn_mode] # 旋转+缩放 = 3个参数
-
-        self.fn = nn.Sequential( 
-            # 512/4=128
-            conv1x1(in_planes=self.feat_in, out_planes=128), # 尺寸不变 NewShape: (B, 128, 243, 243)
-                                                             #         NewShape: (B, 128, 240, 240)
-                                                             #         NewShape: (B, 128, 228, 228)
-                                                             #         NewShape: (B, 128, 173, 173)
-            nn.BatchNorm2d(128),
+        # 针对于变换矩阵
+        if args.mode == 'train':
+            self.model_mode = 'train'
+        else:
+            self.model_mode = 'test'
+        self.feat_size = 128 // (4 * block_index) # 56(第一层输入) // (4 * block_index)  32/4
+        self.stn_mode = args.stn_mode
+        self.stn_n_params = N_PARAMS[self.stn_mode]
+        self.fn = nn.Sequential(
+            # SPPF(128, self.feat_out), # shape 不变 （自己添加的）
+            conv3x3(in_planes=in_num, out_planes=64), # 128
+            nn.BatchNorm2d(64),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=3, stride=2, padding=1), # NewShape: (B, 128, 122, 122) 122 = (243-3+2)/2+1
-                                                              # NewShape: (B, 128, 120, 120) 120 = (240-3+2)/2+1
-                                                              # NewShape: (B, 128, 114, 114) 114 = (228-3+2)/2+1
-                                                              # NewShape: (B, 128, 87, 87) 87 = (173-3+2)/2+1
-            # SPPF(128, self.feat_out), # shape 不变
-
-            conv1x1(in_planes=128, out_planes=self.feat_out),
-            nn.BatchNorm2d(self.feat_out),
+            nn.MaxPool2d(kernel_size=3, stride=2, padding=1), # 128-3+2 / 2 + 1 = 64   
+            conv3x3(in_planes=64, out_planes=16), # 64
+            nn.BatchNorm2d(16),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=3, stride=2, padding=1), #  (B, 1, 61, 61) 61=(122-3+2)/2+1 # 61*61=3721
-                                                              #  (B, 1, 60, 60) 60=(120-3+2)/2+1 # 60*60=3600
-                                                              #  (B, 1, 57, 57) 57=(114-3+2)/2+1 # 57*57=3249 
-                                                              #  (B, 1, 44, 44) 61=(87-3+2)/2+1 # 44*44=1936
+            nn.MaxPool2d(kernel_size=3, stride=2, padding=1), # 32   16   8
         )
-
         self.fc = nn.Sequential(
-            nn.Linear(self.feat_out * self.feat_size * self.feat_size, out_features=1024),  # 16*31*31=15376 
+            # (6, 16, 8, 8)
+            nn.Linear(in_features=16 * self.feat_size * self.feat_size, out_features=1024),
             nn.ReLU(True),
             nn.Linear(in_features=1024, out_features=self.stn_n_params),
         )
-        # fc[2] 是仿射变换矩阵的参数(3个)：nn.Linear的权重, fill 与 zero 
-        self.fc[2].weight.data.fill_(0) # 初始化为0
-        self.fc[2].weight.data.zero_() # 初始化为0
-
+        self.fc[2].weight.data.fill_(0)
+        self.fc[2].weight.data.zero_()
         if self.stn_mode == 'affine':
             self.fc[2].bias.data.copy_(torch.tensor([1, 0, 0, 0, 1, 0], dtype=torch.float))
         elif self.stn_mode in ['translation', 'shear']:
@@ -142,7 +87,7 @@ class STNModule(nn.Module):
             self.fc[2].bias.data.copy_(torch.tensor([1, 1], dtype=torch.float))
         elif self.stn_mode == 'rotation':
             self.fc[2].bias.data.copy_(torch.tensor([0], dtype=torch.float))
-        elif self.stn_mode == 'rotation_scale': # 旋转+缩放 = 3个参数 （初始化）
+        elif self.stn_mode == 'rotation_scale':
             self.fc[2].bias.data.copy_(torch.tensor([0, 1, 1], dtype=torch.float))
         elif self.stn_mode == 'translation_scale':
             self.fc[2].bias.data.copy_(torch.tensor([0, 0, 1, 1], dtype=torch.float))
@@ -150,25 +95,28 @@ class STNModule(nn.Module):
             self.fc[2].bias.data.copy_(torch.tensor([0, 0, 0], dtype=torch.float))
         elif self.stn_mode == 'rotation_translation_scale':
             self.fc[2].bias.data.copy_(torch.tensor([0, 0, 0, 1, 1], dtype=torch.float))
+        
 
     def forward(self, x):
-        # 原始输入 x: torch.Size([32, 64, 56, 56])
-        # 新输入 x: torch.Size([32, 512, 243, 243]) 
-        # 新输入 x: torch.Size([32, 512, 228, 228])
-        # 新输入 x: torch.Size([32, 512, 173, 173])
         mode = self.stn_mode
         batch_size = x.size(0)
-        fix_x = self.fn(x)  # 原始输入 torch.Size([32, 16, 14, 14]) # 16 * 14 * 14 = 3136
-                            # 新输出 torch.Size([32, 1, 61, 61])  # 61 * 61 = 3721
-                            # 新输出 torch.Size([32, 1, 61, 61])  # 61 * 61 = 3721
+        fix_x = self.fn(x) 
         theta = self.fc(fix_x.view(batch_size, -1)) # 3个参数=旋转+缩放
 
         if mode == 'affine':
             # affine 是 什么模式：仿射变换矩阵
             theta1 = theta.view(batch_size, 2, 3)
         else:
-            theta1 = Variable(torch.zeros([batch_size, 2, 3], dtype=torch.float32, device=x.get_device()),
-                              requires_grad=True) # 2*3的张量
+            if self.model_mode == 'train':
+                theta1 = Variable(torch.zeros([batch_size, 2, 3], 
+                                            dtype=torch.float32, 
+                                            device=x.get_device()),
+                                requires_grad=True) # 2*3的张量
+            else:
+                theta1 = Variable(torch.zeros([batch_size, 2, 3], 
+                                            dtype=torch.float32, 
+                                            device='cpu'),
+                                requires_grad=True) # 2*3的张量
             theta1 = theta1 + 0
             theta1[:, 0, 0] = 1.0
             theta1[:, 1, 1] = 1.0
@@ -224,157 +172,6 @@ class STNModule(nn.Module):
         img_transform = F.grid_sample(x, grid, padding_mode="reflection") # 插值在x上
 
         return img_transform, theta1
-
-
-class PDN_M(nn.Module):
-    def __init__(self, last_kernel_size=384, with_bn=False) -> None:
-        super().__init__()
-        # Layer Name Stride Kernel Size Number of Kernels Padding Activation
-        # Conv-1 1×1 4×4 256 3 ReLU
-        # AvgPool-1 2×2 2×2 256 1 -
-        # Conv-2 1×1 4×4 512 3 ReLU
-        # AvgPool-2 2×2 2×2 512 1 -
-        # Conv-3 1×1 1×1 512 0 ReLU
-        # Conv-4 1×1 3×3 512 1 ReLU
-        # Conv-5 1×1 4×4 384 0 ReLU
-        # Conv-6 1×1 1×1 384 0 -
-        # 输入是[Batch, 3, 256, 256]
-        # 960=>61/60 900=>57 680=>44
-        
-        # self.fg1 = 0
-        # self.bg2 = 0
-        # self.ccam1 = 0
-        self.stn1_output = 0
-        # self.fg2 = 0
-        # self.bg2 = 0
-        # self.ccam2 = 0
-        self.stn2_output = 0
-
-        # self.cbam1 = CBAM(channel=512)
-        # self.cbam2 = CBAM(channel=384)
-
-        self.stn1 = STNModule(feat_in=512, feat_out=1, feat_size=61, stn_mode='rotation_scale') 
-        self.stn2 = STNModule(feat_in=384, feat_out=1, feat_size=60, stn_mode='rotation_scale')
-
-        self.with_bn = with_bn
-        self.conv1 = nn.Conv2d(3, 256, kernel_size=4, stride=1, padding=3)
-        self.conv2 = nn.Conv2d(256, 512, kernel_size=4, stride=1, padding=3)
-        self.conv3 = nn.Conv2d(512, 512, kernel_size=1, stride=1, padding=0)
-        self.conv4 = nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=1)
-        self.conv5 = nn.Conv2d(512, last_kernel_size, kernel_size=4, stride=1, padding=0)
-        self.conv6 = nn.Conv2d(last_kernel_size, last_kernel_size, kernel_size=1, stride=1, padding=0)
-        self.avgpool1 = nn.AvgPool2d(kernel_size=2, stride=2, padding=1)
-        self.avgpool2 = nn.AvgPool2d(kernel_size=2, stride=2, padding=1)
-        if self.with_bn:
-            self.bn1 = nn.BatchNorm2d(256)
-            self.bn2 = nn.BatchNorm2d(512)
-            self.bn3 = nn.BatchNorm2d(512)
-            self.bn4 = nn.BatchNorm2d(512)
-            self.bn5 = nn.BatchNorm2d(last_kernel_size)
-            self.bn6 = nn.BatchNorm2d(last_kernel_size)
-    
-    def _fixstn(self, x, theta):
-        # 含义是stn网络=>变换后的图像
-        grid = F.affine_grid(theta, torch.Size(x.shape))
-        img_transform = F.grid_sample(x, grid, padding_mode="reflection")
-
-        return img_transform
-
-    def forward(self, x: Tensor) -> Tensor:
-        # 输入是[Batch, 3, 256, 256]
-        # 变为 [Batch, 3, 960, 960]
-        # 变为 [Batch, 3, 900, 900]
-        # 变为 [Batch, 3, 680, 680]
-        x = self.conv1(x) # shape: [Batch, 256, 256, 256] 256 = (256-4+2*3)/1+1 
-                          # new shape: [Batch, 256, 963, 963] 963=(960-4+2*3)/1+1
-                          # new shape: [Batch, 256, 903, 903] 903=(900-4+2*3)/1+1
-                          # new shape: [Batch, 256, 683, 683] 683=(680-4+2*3)/1+1
-        x = self.bn1(x) if self.with_bn else x 
-        x = F.relu(x) 
-        x = self.avgpool1(x) # shape: [Batch, 256, 128, 128] 128 = (256-2+2*1)/2+1
-                             # new shape: [Batch, 256, 482, 482] 482 = (963-2+2*1)/2+1 
-                             # new shape: [Batch, 256, 452, 452] 452 = (903-2+2*1)/2+1
-                             # new shape: [Batch, 256, 342, 342] 342 = (683-2+2*1)/2+1
-        x = self.conv2(x) # shape: [Batch, 512, 128, 128] 128 = (128-4+2*3)/1+1
-                          # new shape: [Batch, 512, 485, 485] 485 = (482-4+2*3)/1+1
-                          # new shape: [Batch, 512, 455, 455] 455 = (452-4+2*3)/1+1
-                          # new shape: [Batch, 345, 345, 345] 345 = (342-4+2*3)/1+1
-        x = self.bn2(x) if self.with_bn else x 
-        x = F.relu(x) 
-        x = self.avgpool2(x) # shape: [Batch, 512, 64, 64] 64 = (128-2+2*1)/2+1
-                             # new shape: [Batch, 512, 243, 243] 243 = (485-2+2*1)/2+1
-                             # new shape: [Batch, 512, 228, 228] 228 = (455-2+2*1)/2+1
-                             # new shape: [Batch, 512, 173, 173] 173 = (345-2+2*1)/2+1
-        
-        x = self.conv3(x) # shape: [Batch, 512, 64, 64] 64 = (64-1+2*0)/1+1
-                          # new shape: [Batch, 512, 243, 243] 243 = (243-1+2*0)/1+1
-                          # new shape: [Batch, 512, 228, 228] 228 = (228-1+2*0)/1+1
-                          # new shape: [Batch, 512, 173, 173] 173 = (173-1+2*0)/1+1
-        x = self.bn3(x) if self.with_bn else x 
-        x = F.relu(x)  
-        
-        x = self.conv4(x) # shape: [Batch, 512, 64, 64] 64 = (64-3+2*1)/1+1 
-                          # new shape: [Batch, 512, 243, 243] 243 = (243-3+2*1)/1+1
-                          # new shape: [Batch, 512, 228, 228] 228 = (228-3+2*1)/1+1
-                          # new shape: [Batch, 512, 173, 173] 173 = (173-3+2*1)/1+1
-        x = self.bn4(x) if self.with_bn else x 
-        x = F.relu(x)
-        
-        # stn1
-        # x, ccam1, fg1, bg1 = self.cbam1(x)
-        # if x.size(0) != 1:
-        #     self.fg1 = torch.mean(fg1, dim=0).detach().cpu().numpy()
-        #     self.bg1 = torch.mean(bg1, dim=0).detach().cpu().numpy()
-        #     self.ccam1 = torch.mean(ccam1, dim=0).detach().cpu().numpy()
-        # else:
-        #     self.fg1 = fg1
-        #     self.bg1 = bg1
-        #     self.ccam1 = ccam1
-        x, theta1 = self.stn1(x) # x是变换后的图像，theta1是变换矩阵
-        tmp = np.tile(np.array([0, 0, 1]), (x.shape[0], 1, 1)).astype(np.float32)
-        fixthea1 = torch.from_numpy(np.linalg.inv(np.concatenate((theta1.detach().cpu().numpy(), tmp), axis=1))[:,:-1,:]).cuda(1)
-        self.stn1_output = self._fixstn(x.detach(), fixthea1) # 可视化的时候用
-        
-        x = self.conv5(x) # shape: [Batch, 384, 61, 61] 61 = (64-4+2*0)/1+1
-                          # new shape: [Batch, 384, 240, 240] 240 = (243-4+2*0)/1+1
-                          # new shape: [Batch, 384, 225, 225] 225 = (228-4+2*0)/1+1
-                          # new shape: [Batch, 384, 170, 170] 170 = (173-4+2*0)/1+1
-        x = self.bn5(x) if self.with_bn else x
-        x = F.relu(x)
-        
-        # stn2  
-        # x, ccam2, fg2, bg2 = self.cbam2(x)
-        # if x.size(0) != 1:
-        #     self.fg2 = torch.mean(fg2, dim=0).detach().cpu().numpy()
-        #     self.bg2 = torch.mean(bg2, dim=0).detach().cpu().numpy()
-        #     self.ccam2 = torch.mean(ccam2, dim=0).detach().cpu().numpy()
-        # else:
-        #     self.fg2 = fg2
-        #     self.bg2 = bg2
-        #     self.ccam2 = ccam2
-        out, theta2 = self.stn2(x)
-        tmp = np.tile(np.array([0, 0, 1]), (x.shape[0], 1, 1)).astype(np.float32)
-        fixthea2 = torch.from_numpy(np.linalg.inv(np.concatenate((theta2.detach().cpu().numpy(), tmp), axis=1))[:,:-1,:]).cuda(1)
-        self.stn2_output = self._fixstn(self._fixstn(x.detach(), fixthea2), fixthea1) # 恢复
-        
-        x = self.conv6(out) # shape: [Batch, 384, 61, 61] 61 = (61-1+2*0)/1+1
-                            # new shape: [Batch, 384, 240, 240] 240 = (240-1+2*0)/1+1
-                            # new shape: [Batch, 384, 225, 225] 225 = (225-1+2*0)/1+1
-                            # new shape: [Batch, 384, 170, 170] 170 = (170-1+2*0)/1+1
-        x = self.bn6(x) if self.with_bn else x 
-        return x
-
-def stn_net(pretrained=True, **kwargs):
-    """Constructs a ResNet-18 model.
-    Args:
-        pretrained (bool): If True, returns a model pre-trained on ImageNet
-    """
-    # model = ResNet(args, BasicBlock, [2, 2, 2, 2], **kwargs)
-    model = PDN_M(last_kernel_size=384, with_bn=False)
-    # if pretrained:
-    #     model.load_state_dict(torch.load('./pth/best_teacher.pth'), strict=False)
-        # model.load_state_dict(model_zoo.load_url(model_urls['resnet18']), strict=False)
-    return model
 
 class BasicBlock(nn.Module):
     expansion: int = 1
@@ -448,7 +245,7 @@ class ResNet(nn.Module):
         self.stn2 = STNModule(128, 2, args)
 
         self.layer3 = self._make_layer(block, 256, layers[2], stride=2) # layer[2] = 2
-        self.stn3 = STNModule(256, 3, args)
+        self.stn3 = STNModule(256, 4, args) # 最后是8
 
     def _make_layer(self, block, planes, blocks, stride=1):
         downsample = None
@@ -481,25 +278,37 @@ class ResNet(nn.Module):
         x = self.maxpool(x) # torch.Size([32, 64, 56, 56]) 56 = (112-3)/2+1
         # torch.Size([32, 64, 56, 56])
 
-        x = self.layer1(x) # torch.Size([32, 64, 56, 56]) 56 = (56-3)/1+1 
+        x = self.layer1(x) # torch.Size([32, 64, 56, 56]) 56 = (56-3)/1+1   128
         x, theta1 = self.stn1(x) # x是变换后的图像，theta1是变换矩阵
         tmp = np.tile(np.array([0, 0, 1]), (x.shape[0], 1, 1)).astype(np.float32)
-        fixthea1 = torch.from_numpy(np.linalg.inv(np.concatenate((theta1.detach().cpu().numpy(), tmp), axis=1))[:,:-1,:]).cuda(1)
-        self.stn1_output = self._fixstn(x.detach(), fixthea1) # 可视化的时候用
+        fixthea1 = torch.from_numpy(np.linalg.inv(np.concatenate((theta1.detach().cpu().numpy(), tmp), axis=1))[:,:-1,:]).cpu() # cuda(1)
+        self.stn1_output = self._fixstn(x.detach().cpu(), fixthea1) # 可视化的时候用
         # after layer1 shape:  torch.Size([32, 64, 56, 56])
 
-        x = self.layer2(x) # torch.Size([32, 128, 28, 28]) 28 = (56-3)/2+1
+        x = self.layer2(x) # torch.Size([32, 128, 28, 28]) 28 = (56-3)/2+1   64
         x, theta2 = self.stn2(x)
         tmp = np.tile(np.array([0, 0, 1]), (x.shape[0], 1, 1)).astype(np.float32)
-        fixthea2 = torch.from_numpy(np.linalg.inv(np.concatenate((theta2.detach().cpu().numpy(), tmp), axis=1))[:,:-1,:]).cuda(1)
-        self.stn2_output = self._fixstn(self._fixstn(x.detach(), fixthea2), fixthea1) # 恢复
+        fixthea2 = torch.from_numpy(np.linalg.inv(np.concatenate((theta2.detach().cpu().numpy(), tmp), axis=1))[:,:-1,:]).cpu() # cuda(1)
+        self.stn2_output = self._fixstn(self._fixstn(x.detach().cpu(), fixthea2), fixthea1) # 恢复
         # after layer2 shape:  torch.Size([32, 128, 28, 28])
 
-        x = self.layer3(x) # torch.Size([32, 256, 14, 14]) 14 = (28-3)/2+1
+        x = self.layer3(x) # torch.Size([32, 256, 14, 14]) 14 = (28-3)/2+1   32
         out, theta3 = self.stn3(x)
         tmp = np.tile(np.array([0, 0, 1]), (x.shape[0], 1, 1)).astype(np.float32)
-        fixthea3 = torch.from_numpy(np.linalg.inv(np.concatenate((theta3.detach().cpu().numpy(), tmp), axis=1))[:,:-1,:]).cuda(1)
-        self.stn3_output = self._fixstn(self._fixstn(self._fixstn(out.detach(), fixthea3), fixthea2), fixthea1) # 恢复
+        fixthea3 = torch.from_numpy(np.linalg.inv(np.concatenate((theta3.detach().cpu().numpy(), tmp), axis=1))[:,:-1,:]).cpu() # cuda(1)
+        self.stn3_output = self._fixstn(self._fixstn(self._fixstn(out.detach().cpu(), fixthea3), fixthea2), fixthea1) # 恢复
         # after layer3 shape:  torch.Size([32, 256, 14, 14])
 
         return out
+
+def stn_net(args, pretrained=True, **kwargs):
+    """Constructs a ResNet-18 model.
+    Args:
+        pretrained (bool): If True, returns a model pre-trained on ImageNet
+    """
+    model = ResNet(args, BasicBlock, [2, 2, 2, 2], **kwargs)
+
+    if pretrained:
+        model.load_state_dict(model_zoo.load_url(model_urls['resnet18']), strict=False)
+    return model
+
